@@ -8,6 +8,8 @@ build/
 .externalNativeBuild
 .cxx
 local.properties
+# Unbundled release APK outputs that land in app/release/.
+app/release/
 # Extracted dependency sources and build leftovers left at the repo root.
 /androidx/
 /META-INF/
