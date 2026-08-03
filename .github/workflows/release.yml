@@ -47,18 +47,13 @@ jobs:
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew :app:assembleRelease --no-daemon
 
-      - name: Resolve release tag
-        id: tag
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            TAG="${{ github.ref_name }}"
           else
-            echo "name=build-$(date +'%Y%m%d-%H%M%S')" >> "$GITHUB_OUTPUT"
+            TAG="build-$(date +'%Y%m%d-%H%M%S')"
           fi
-
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          files: app/build/outputs/apk/release/*.apk
-          generate_release_notes: true
+          gh release create "$TAG" app/build/outputs/apk/release/*.apk --generate-notes
