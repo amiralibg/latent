@@ -28,9 +28,11 @@ jobs:
           sdkmanager "platforms;android-37" >/dev/null 2>&1 || echo "platform already present"
 
       - name: Prepare signing keystore
+        env:
+          RELEASE_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE }}
         run: |
-          if [[ -n "${{ secrets.RELEASE_KEYSTORE }}" ]]; then
-            echo "${{ secrets.RELEASE_KEYSTORE }}" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          if [[ -n "$RELEASE_KEYSTORE_B64" ]]; then
+            echo "$RELEASE_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
           else
             mkdir -p "$HOME/.android"
             keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" \
