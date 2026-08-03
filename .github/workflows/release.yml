@@ -27,18 +27,21 @@ jobs:
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager "platforms;android-37" >/dev/null 2>&1 || echo "platform already present"
 
-      - name: Ensure a signing keystore exists
+      - name: Prepare signing keystore
         run: |
-          if [[ -z "${{ secrets.RELEASE_KEYSTORE }}" ]]; then
+          if [[ -n "${{ secrets.RELEASE_KEYSTORE }}" ]]; then
+            echo "${{ secrets.RELEASE_KEYSTORE }}" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          else
+            mkdir -p "$HOME/.android"
             keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" \
               -storepass android -alias androiddebugkey -keypass android \
               -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US" >/dev/null 2>&1
+              -dname "CN=Android Debug,O=Android,C=US"
           fi
 
       - name: Build release APK
         env:
-          RELEASE_KEYSTORE: ${{ secrets.RELEASE_KEYSTORE }}
+          RELEASE_KEYSTORE: ${{ runner.temp }}/release.keystore
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}

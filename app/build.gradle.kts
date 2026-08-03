@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -25,8 +27,11 @@ android {
             // (or until secrets are set) they fall back to the debug key so the
             // produced APK is still installable.
             val keystore = System.getenv("RELEASE_KEYSTORE")
-            if (!keystore.isNullOrBlank()) {
-                storeFile = file(keystore)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { File(it) }
+                ?.takeIf { it.exists() }
+            if (keystore != null) {
+                storeFile = keystore
                 storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("RELEASE_KEY_ALIAS")
                 keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
