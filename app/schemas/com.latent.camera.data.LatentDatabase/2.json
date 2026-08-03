@@ -1,0 +1,209 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "5f2a15b522506c71a331114e376efa2a",
+    "entities": [
+      {
+        "tableName": "captures",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`stem` TEXT NOT NULL, `output_uri` TEXT NOT NULL, `source_uri` TEXT, `recipe_name` TEXT NOT NULL, `captured_at` INTEGER NOT NULL, `rotation_degrees` INTEGER NOT NULL, `source_width` INTEGER NOT NULL, `source_height` INTEGER NOT NULL, PRIMARY KEY(`stem`))",
+        "fields": [
+          {
+            "fieldPath": "stem",
+            "columnName": "stem",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outputUri",
+            "columnName": "output_uri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceUri",
+            "columnName": "source_uri",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "recipeName",
+            "columnName": "recipe_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "capturedAt",
+            "columnName": "captured_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rotationDegrees",
+            "columnName": "rotation_degrees",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceWidth",
+            "columnName": "source_width",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceHeight",
+            "columnName": "source_height",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "stem"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_captures_captured_at",
+            "unique": false,
+            "columnNames": [
+              "captured_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_captures_captured_at` ON `${TABLE_NAME}` (`captured_at`)"
+          }
+        ]
+      },
+      {
+        "tableName": "recipes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `position` INTEGER NOT NULL, `lift` REAL NOT NULL, `gamma` REAL NOT NULL, `gain` REAL NOT NULL, `contrast` REAL NOT NULL, `clarity` REAL NOT NULL, `clarityRadius` REAL NOT NULL, `halation` REAL NOT NULL, `halationThreshold` REAL NOT NULL, `halationRadius` REAL NOT NULL, `grain` REAL NOT NULL, `grainSize` REAL NOT NULL, `toning` REAL NOT NULL, `vignette` REAL NOT NULL, `mix_r` REAL NOT NULL, `mix_g` REAL NOT NULL, `mix_b` REAL NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lift",
+            "columnName": "lift",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gamma",
+            "columnName": "gamma",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gain",
+            "columnName": "gain",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contrast",
+            "columnName": "contrast",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "clarity",
+            "columnName": "clarity",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "clarityRadius",
+            "columnName": "clarityRadius",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "halation",
+            "columnName": "halation",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "halationThreshold",
+            "columnName": "halationThreshold",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "halationRadius",
+            "columnName": "halationRadius",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "grain",
+            "columnName": "grain",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "grainSize",
+            "columnName": "grainSize",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "toning",
+            "columnName": "toning",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "vignette",
+            "columnName": "vignette",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "channelMix.r",
+            "columnName": "mix_r",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "channelMix.g",
+            "columnName": "mix_g",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "channelMix.b",
+            "columnName": "mix_b",
+            "affinity": "REAL",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '5f2a15b522506c71a331114e376efa2a')"
+    ]
+  }
+}

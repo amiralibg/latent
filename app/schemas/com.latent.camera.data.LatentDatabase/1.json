@@ -1,0 +1,83 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "96586eccf21499d44cc66ffd2600c33d",
+    "entities": [
+      {
+        "tableName": "captures",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`stem` TEXT NOT NULL, `output_uri` TEXT NOT NULL, `source_uri` TEXT, `recipe_name` TEXT NOT NULL, `captured_at` INTEGER NOT NULL, `rotation_degrees` INTEGER NOT NULL, `source_width` INTEGER NOT NULL, `source_height` INTEGER NOT NULL, PRIMARY KEY(`stem`))",
+        "fields": [
+          {
+            "fieldPath": "stem",
+            "columnName": "stem",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outputUri",
+            "columnName": "output_uri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceUri",
+            "columnName": "source_uri",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "recipeName",
+            "columnName": "recipe_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "capturedAt",
+            "columnName": "captured_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rotationDegrees",
+            "columnName": "rotation_degrees",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceWidth",
+            "columnName": "source_width",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceHeight",
+            "columnName": "source_height",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "stem"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_captures_captured_at",
+            "unique": false,
+            "columnNames": [
+              "captured_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_captures_captured_at` ON `${TABLE_NAME}` (`captured_at`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '96586eccf21499d44cc66ffd2600c33d')"
+    ]
+  }
+}

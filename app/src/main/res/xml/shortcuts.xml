@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- The viewfinder is what the icon already does, so the only shortcut worth
+         having is the one that skips it. -->
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_contact_sheet"
+        android:shortcutId="contact-sheet"
+        android:shortcutLongLabel="@string/shortcut_contact_sheet_long"
+        android:shortcutShortLabel="@string/shortcut_contact_sheet_short">
+        <intent
+            android:action="com.latent.camera.action.CONTACT_SHEET"
+            android:targetClass="com.latent.camera.MainActivity"
+            android:targetPackage="com.latent.camera" />
+    </shortcut>
+
+</shortcuts>

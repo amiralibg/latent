@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Latent</string>
+    <string name="tile_label">Latent</string>
+    <string name="shortcut_contact_sheet_short">Frames</string>
+    <string name="shortcut_contact_sheet_long">Open the contact sheet</string>
+</resources>

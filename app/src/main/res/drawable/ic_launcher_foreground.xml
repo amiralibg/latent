@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The mark is the invariant: a 1:1 frame, one quadrant printed, a lens dot
+     where the eye goes. Minimal and monochrome — Nothing-style chrome on black.
+     Everything sits inside the 66dp adaptive safe zone, centred on the 108dp
+     canvas. The same white geometry feeds the monochrome (themed) icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 1:1 frame -->
+    <path
+        android:pathData="M36,36 L72,36 L72,72 L36,72 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineJoin="miter" />
+
+    <!-- the printed quadrant, diagonally opposite the lens -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M58,58 L67,58 L67,67 L58,67 Z" />
+
+    <!-- the lens -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M45,45 m-5,0 a5,5 0 1,1 10,0 a5,5 0 1,1 -10,0" />
+
+</vector>
