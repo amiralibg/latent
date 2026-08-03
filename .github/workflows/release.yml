@@ -31,8 +31,12 @@ jobs:
         env:
           RELEASE_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE }}
         run: |
+          echo "keystore env length: ${#RELEASE_KEYSTORE_B64}"
           if [[ -n "$RELEASE_KEYSTORE_B64" ]]; then
-            echo "$RELEASE_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "$RELEASE_KEYSTORE_B64" > "$RUNNER_TEMP/ks.b64"
+            tr -d '\r\n' < "$RUNNER_TEMP/ks.b64" > "$RUNNER_TEMP/ks.clean"
+            base64 -d "$RUNNER_TEMP/ks.clean" > "$RUNNER_TEMP/release.keystore"
+            file "$RUNNER_TEMP/release.keystore"
           else
             mkdir -p "$HOME/.android"
             keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" \
