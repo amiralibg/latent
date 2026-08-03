@@ -25,7 +25,7 @@ android {
             // (or until secrets are set) they fall back to the debug key so the
             // produced APK is still installable.
             val keystore = System.getenv("RELEASE_KEYSTORE")
-            if (keystore != null) {
+            if (!keystore.isNullOrBlank()) {
                 storeFile = file(keystore)
                 storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("RELEASE_KEY_ALIAS")
