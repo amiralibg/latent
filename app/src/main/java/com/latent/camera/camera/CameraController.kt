@@ -224,13 +224,50 @@ class CameraController(context: Context) {
             return
         }
         cameraProvider = provider
+
+        val hasFront = try {
+            provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not query the front camera", e)
+            false
+        }
+        _state.update { it.copy(hasFrontCamera = hasFront) }
+
         bindUseCases(provider, lifecycleOwner, surfaceProvider)
     }
 
+    private fun selectorFor(front: Boolean): CameraSelector =
+        if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+
     /**
-     * Re-open the camera with the same surface. Only the save mode calls this, and
-     * only when it has to: a rebind drops frames, so it is not something to do on any
-     * setting that could be applied to a live session instead.
+     * Turn the camera round.
+     *
+     * Everything dialled in by hand is dropped on the way: ISO, shutter and focus are
+     * values for a specific sensor and lens, and carrying a back-camera exposure onto
+     * a front camera that has a fixed aperture and a different range would silently
+     * clamp to something nobody chose. Zoom goes back to 1x for the same reason. The
+     * recipe is the exception and stays — a look is about the picture, not the lens.
+     */
+    fun toggleFacing() {
+        if (!_state.value.hasFrontCamera) return
+        val front = !_state.value.frontFacing
+        _state.update {
+            it.copy(
+                frontFacing = front,
+                isReady = false,
+                manual = ManualControls(),
+                zoomRatio = 1f,
+                exposureIndex = 0,
+                focus = null,
+            )
+        }
+        controlScope.launch { rebind() }
+    }
+
+    /**
+     * Re-open the camera with the same surface. The save mode and the facing switch
+     * call this, and only when they have to: a rebind drops frames, so it is not
+     * something to do on any setting that could be applied to a live session instead.
      */
     private suspend fun rebind() {
         val provider = cameraProvider ?: return
@@ -297,7 +334,7 @@ class CameraController(context: Context) {
             provider.unbindAll()
             provider.bindToLifecycle(
                 lifecycleOwner,
-                CameraSelector.DEFAULT_BACK_CAMERA,
+                selectorFor(_state.value.frontFacing),
                 useCases,
             )
         } catch (e: Exception) {
@@ -308,6 +345,15 @@ class CameraController(context: Context) {
                 Log.w(TAG, "RAW binding refused; falling back to JPEG")
                 _state.update { it.copy(saveMode = SaveMode.BwAndOriginal) }
                 bindUseCases(provider, lifecycleOwner, surfaceProvider)
+            } else if (_state.value.frontFacing) {
+                // The front camera claimed to exist and then would not open. Going
+                // back to the lens we know works beats leaving a dead viewfinder.
+                Log.w(TAG, "Front camera refused the binding; returning to the back")
+                _state.update { it.copy(frontFacing = false) }
+                bindUseCases(provider, lifecycleOwner, surfaceProvider)
+                // After the rebind, not before: a successful bind clears the error
+                // field, and this is the one message the user needs to keep.
+                _state.update { it.copy(error = "Front camera unavailable") }
             } else {
                 _state.update { it.copy(error = "Could not open the camera") }
             }
@@ -791,6 +837,11 @@ data class CameraState(
     val countdown: Int = 0,
     val silentShutter: Boolean = true,
     val saveMode: SaveMode = SaveMode.BwAndOriginal,
+
+    /** Which way the bound camera points. Back on launch, always. */
+    val frontFacing: Boolean = false,
+    /** False on a device with no front camera, which hides the flip control entirely. */
+    val hasFrontCamera: Boolean = false,
 
     val aids: AidsState = AidsState(),
     /** Device roll in degrees; 0 is level. */

@@ -1,18 +1,15 @@
 package com.latent.camera.ui
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -22,13 +19,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -37,22 +31,25 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.latent.camera.camera.CameraCapabilities
 import com.latent.camera.camera.CameraState
 import com.latent.camera.camera.MeteredValues
+import com.latent.camera.ui.theme.Feedback
+import com.latent.camera.ui.theme.LatentChip
 import com.latent.camera.ui.theme.LatentInk
-import kotlinx.coroutines.flow.distinctUntilChanged
+import com.latent.camera.ui.theme.LatentText
+import com.latent.camera.ui.theme.LatentType
+import com.latent.camera.ui.theme.Motion
+import com.latent.camera.ui.theme.tactile
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 enum class ManualParam { Iso, Shutter, Focus }
 
@@ -72,6 +69,7 @@ fun ManualDeck(
     modifier: Modifier = Modifier,
 ) {
     val capabilities = state.capabilities ?: return
+    val haptics = LocalHapticFeedback.current
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -110,14 +108,15 @@ fun ManualDeck(
                     )
                 }
             }
-            Text(
-                text = "AUTO",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (state.manual.isAnyManual) LatentInk.Medium else LatentInk.Soft,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .clickable(onClick = onClear)
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+            LatentChip(
+                label = "AUTO",
+                selected = false,
+                idleTint = if (state.manual.isAnyManual) LatentInk.Medium else LatentInk.Soft,
+                horizontalPadding = 10.dp,
+                onClick = {
+                    Feedback.confirm(haptics)
+                    onClear()
+                },
             )
         }
 
@@ -161,32 +160,53 @@ fun ManualDeck(
                     },
                 )
                 if (state.handheldWarning) {
-                    Text(
+                    LatentText(
                         text = "HOLD STEADY",
-                        style = MaterialTheme.typography.labelSmall,
+                        style = LatentType.LabelSmall,
                         color = LatentInk.Warn,
                         modifier = Modifier.padding(top = 2.dp),
                     )
                 }
             }
             ManualParam.Focus -> if (capabilities.supportsManualFocus) {
-                FocusHint(
-                    state = state,
-                    capabilities = capabilities,
-                    onEngage = {
-                        if (state.manual.focusDioptres == null) {
-                            onFocus(
-                                state.metered.focusDistanceDioptres ?: 0f,
-                            )
-                        }
+                // The same dial as ISO and shutter, deliberately. Focus used to be a
+                // vertical rail hidden down the left of the frame, which meant the
+                // FOCUS chip selected a control that was somewhere else on screen and
+                // had to be explained in words. A parameter you pick from a row of
+                // distances needs no instructions and behaves like its two neighbours.
+                val stops = focusStops(capabilities.minFocusDistanceDioptres)
+                val current = state.manual.focusDioptres
+                    ?: state.metered.focusDistanceDioptres
+                    ?: 0f
+                TickDial(
+                    labels = stops.map(::formatFocusDistance),
+                    selectedIndex = stops.indexOfClosestDioptre(current),
+                    onSelect = { index -> onFocus(stops[index]) },
+                    onEngageIfNeeded = {
+                        if (state.manual.focusDioptres == null) onFocus(current)
                     },
-                    onAuto = { onFocus(null) },
                 )
+                if (!capabilities.focusDistanceCalibrated) {
+                    // The device says its dioptre scale is arbitrary, so the metre
+                    // labels are a rough guide rather than a measurement. Better to
+                    // admit that than to print "0.5 m" and be believed.
+                    LatentText(
+                        text = "DISTANCES APPROXIMATE",
+                        style = LatentType.LabelSmall,
+                        color = LatentInk.Soft,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
             }
         }
     }
 }
 
+/**
+ * Selected is which dial the deck is showing; engaged is whether that parameter has
+ * actually been taken off auto. They are different facts and they need different ink —
+ * a chip you are looking at is not the same as a chip that is holding the camera.
+ */
 @Composable
 private fun ParamChip(
     label: String,
@@ -194,114 +214,13 @@ private fun ParamChip(
     engaged: Boolean,
     onClick: () -> Unit,
 ) {
-    Text(
-        text = label,
-        style = MaterialTheme.typography.labelSmall,
-        color = when {
-            selected -> LatentInk.Full
-            engaged -> LatentInk.Medium
-            else -> LatentInk.Soft
-        },
-        modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
-            .background(if (selected) LatentInk.Wash else Color.Transparent)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+    LatentChip(
+        label = label,
+        selected = selected,
+        idleTint = if (engaged) LatentInk.Medium else LatentInk.Soft,
+        horizontalPadding = 12.dp,
+        onClick = onClick,
     )
-}
-
-@Composable
-private fun FocusHint(
-    state: CameraState,
-    capabilities: CameraCapabilities,
-    onEngage: () -> Unit,
-    onAuto: () -> Unit,
-) {
-    val manual = state.manual.focusDioptres != null
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(RecipeStripHeight)
-            .clickable(onClick = { if (manual) onAuto() else onEngage() }),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            text = if (manual) {
-                formatFocusDistance(state.manual.focusDioptres ?: 0f)
-            } else {
-                "DRAG LEFT RAIL"
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = LatentInk.Strong,
-        )
-        Text(
-            text = if (manual) "TAP FOR AUTO" else "TAP TO ENGAGE",
-            style = MaterialTheme.typography.labelSmall,
-            color = LatentInk.Soft,
-            modifier = Modifier.padding(top = 2.dp),
-        )
-    }
-}
-
-/**
- * Vertical focus rail on the left of the frame. Near at the bottom, infinity at
- * the top — the way a focus ring feels when the camera is upright.
- */
-@Composable
-fun FocusRail(
-    dioptres: Float,
-    maxDioptres: Float,
-    onChange: (Float) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var accum by remember { mutableFloatStateOf(0f) }
-    val max = maxDioptres.coerceAtLeast(0.01f)
-
-    Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .width(48.dp)
-            .pointerInput(max, dioptres) {
-                detectVerticalDragGestures(
-                    onDragEnd = { accum = 0f },
-                    onVerticalDrag = { change, dragAmount ->
-                        change.consume()
-                        // Drag up → infinity (fewer dioptres); down → nearer.
-                        accum += dragAmount
-                        val spanPx = size.height * 0.7f
-                        if (abs(accum) >= 1f) {
-                            val delta = (accum / spanPx) * max
-                            accum = 0f
-                            onChange((dioptres + delta).coerceIn(0f, max))
-                        }
-                    },
-                )
-            }
-            .padding(vertical = 48.dp, horizontal = 12.dp),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxHeight(0.55f),
-        ) {
-            Text("∞", style = MaterialTheme.typography.labelSmall, color = LatentInk.Soft)
-            Box(
-                modifier = Modifier
-                    .width(2.dp)
-                    .weight(1f)
-                    .padding(vertical = 8.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(LatentInk.Faint, LatentInk.Medium, LatentInk.Faint),
-                        ),
-                        RoundedCornerShape(1.dp),
-                    ),
-            )
-            Text("N", style = MaterialTheme.typography.labelSmall, color = LatentInk.Soft)
-        }
-    }
 }
 
 /**
@@ -352,14 +271,21 @@ fun TickDial(
 
     LaunchedEffect(Unit) { onEngageIfNeeded() }
 
+    // Falling edge of the scroll only — see the note in RecipeStrip. A dial that
+    // selects on relayout will walk ISO a stop sideways every time the deck redraws.
     LaunchedEffect(listState) {
-        snapshotFlow { centredIndex to listState.isScrollInProgress }
+        var wasScrolling = false
+        snapshotFlow { listState.isScrollInProgress }
             .distinctUntilChanged()
-            .collect { (index, scrolling) ->
-                if (!scrolling && index != currentSelected) {
-                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    onSelect(index)
+            .collect { scrolling ->
+                if (wasScrolling && !scrolling) {
+                    val index = centredIndex
+                    if (index != currentSelected) {
+                        Feedback.tick(haptics)
+                        onSelect(index)
+                    }
                 }
+                wasScrolling = scrolling
             }
     }
 
@@ -382,25 +308,33 @@ fun TickDial(
         ) {
             itemsIndexed(labels) { index, label ->
                 val selected = index == selectedIndex
+                // The value under the hairline is a little larger than its neighbours.
+                // Scale, not just ink: at arm's length the size difference is what
+                // makes the dial readable while it is still moving.
+                val emphasis by animateFloatAsState(
+                    targetValue = if (selected) 1f else 0.86f,
+                    animationSpec = Motion.settle(),
+                    label = "dialEmphasis",
+                )
                 Box(
                     modifier = Modifier
                         .width(itemWidth)
                         .height(RecipeStripHeight),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
+                    LatentText(
                         text = label,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
+                        style = LatentType.Readout,
+                        align = TextAlign.Center,
                         color = if (selected) LatentInk.Full else LatentInk.Soft,
                         modifier = Modifier
+                            .tactile { onSelect(index) }
+                            .graphicsLayer {
+                                scaleX = emphasis
+                                scaleY = emphasis
+                            }
                             .clip(RoundedCornerShape(6.dp))
                             .background(if (selected) LatentInk.Wash else Color.Transparent)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = { onSelect(index) },
-                            )
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                     )
                 }
@@ -416,6 +350,30 @@ fun TickDial(
         )
     }
 }
+
+/**
+ * Focus stops, infinity first and closest last — the direction a focus ring turns.
+ *
+ * The dial is built from distances a photographer would name rather than from evenly
+ * spaced dioptres. Dioptres are 1/metres, so an even split in dioptre space spends
+ * half the dial between 5cm and 10cm and gives everything from 2m to infinity a single
+ * stop. Choosing the metres and converting is what makes the middle of the dial the
+ * part you actually shoot in.
+ */
+private fun focusStops(minFocusDioptres: Float): List<Float> {
+    val max = minFocusDioptres.coerceAtLeast(0.5f)
+    val metres = listOf(10f, 5f, 3f, 2f, 1.5f, 1f, 0.7f, 0.5f, 0.35f, 0.25f, 0.2f, 0.15f, 0.1f)
+    return (listOf(0f) + metres.map { 1f / it })
+        // Nothing past what the lens can actually do, but always offer the true
+        // close-focus limit so the near end of the dial is the near end of the lens.
+        .filter { it < max }
+        .plus(max)
+        .distinctBy { (it * 50f).roundToInt() }
+        .sorted()
+}
+
+private fun List<Float>.indexOfClosestDioptre(value: Float): Int =
+    indices.minByOrNull { abs(this[it] - value) } ?: 0
 
 fun formatFocusDistance(dioptres: Float): String {
     if (dioptres <= 0.05f) return "∞"

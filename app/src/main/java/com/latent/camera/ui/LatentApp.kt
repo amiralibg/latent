@@ -2,6 +2,8 @@ package com.latent.camera.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,6 +20,7 @@ import com.latent.camera.settings.AidsSettings
 import com.latent.camera.settings.CaptureSettings
 import com.latent.camera.ui.gallery.ContactSheet
 import com.latent.camera.ui.gallery.FrameViewer
+import com.latent.camera.ui.theme.Motion
 
 /**
  * Where the app is. Three destinations and no back stack worth the name, so this is a
@@ -64,39 +67,50 @@ fun LatentApp(
 
     // The gate is per destination, not around the app. Browsing frames you already
     // shot is not a reason to ask for the camera, and the shortcut opens here.
-    when (val current = destination) {
-        Destination.Viewfinder -> PermissionGate(AccessPurpose.Viewfinder) {
-            CameraScreen(
-                controller = controller,
-                recipes = recipes,
-                aidsSettings = aidsSettings,
-                captureSettings = captureSettings,
-                latestCaptureUri = latest?.outputUri?.let(Uri::parse),
-                onOpenGallery = { destination = Destination.ContactSheet },
-            )
-        }
+    //
+    // Destinations crossfade rather than slide. A slide would imply the three screens
+    // sit beside each other; they do not — the viewfinder is the app and the other two
+    // are it looking backwards. The fade is short enough that leaving the viewfinder
+    // still feels like putting the camera down rather than closing a document.
+    Crossfade(
+        targetState = destination,
+        animationSpec = tween(220, easing = Motion.Sharp),
+        label = "destination",
+    ) { current ->
+        when (current) {
+            Destination.Viewfinder -> PermissionGate(AccessPurpose.Viewfinder) {
+                CameraScreen(
+                    controller = controller,
+                    recipes = recipes,
+                    aidsSettings = aidsSettings,
+                    captureSettings = captureSettings,
+                    latestCaptureUri = latest?.outputUri?.let(Uri::parse),
+                    onOpenGallery = { destination = Destination.ContactSheet },
+                )
+            }
 
-        Destination.ContactSheet -> PermissionGate(AccessPurpose.Library) {
-            ContactSheet(
-                captures = captures,
-                onOpen = { record ->
-                    val index = captures.indexOfFirst { it.stem == record.stem }
-                    destination = Destination.Frame(index.coerceAtLeast(0))
-                },
-                onBack = { destination = Destination.Viewfinder },
-            )
-        }
+            Destination.ContactSheet -> PermissionGate(AccessPurpose.Library) {
+                ContactSheet(
+                    captures = captures,
+                    onOpen = { record ->
+                        val index = captures.indexOfFirst { it.stem == record.stem }
+                        destination = Destination.Frame(index.coerceAtLeast(0))
+                    },
+                    onBack = { destination = Destination.Viewfinder },
+                )
+            }
 
-        is Destination.Frame -> PermissionGate(AccessPurpose.Library) {
-            FrameViewer(
-                captures = captures,
-                startIndex = current.startIndex,
-                recipes = allRecipes,
-                onRegrade = controller::regrade,
-                onShare = share,
-                onDelete = gallery::delete,
-                onBack = { destination = Destination.ContactSheet },
-            )
+            is Destination.Frame -> PermissionGate(AccessPurpose.Library) {
+                FrameViewer(
+                    captures = captures,
+                    startIndex = current.startIndex,
+                    recipes = allRecipes,
+                    onRegrade = controller::regrade,
+                    onShare = share,
+                    onDelete = gallery::delete,
+                    onBack = { destination = Destination.ContactSheet },
+                )
+            }
         }
     }
 }

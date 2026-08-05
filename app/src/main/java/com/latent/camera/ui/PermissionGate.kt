@@ -12,11 +12,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +33,10 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.latent.camera.ui.theme.LatentButton
+import com.latent.camera.ui.theme.LatentInk
+import com.latent.camera.ui.theme.LatentText
+import com.latent.camera.ui.theme.LatentType
 
 /**
  * What a screen needs before it can do its job.
@@ -136,30 +139,31 @@ private fun RationaleScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
+        LatentText(
             text = when (purpose) {
                 AccessPurpose.Viewfinder -> "Latent is a camera"
                 AccessPurpose.Library -> "Latent keeps your frames on the device"
             },
-            style = MaterialTheme.typography.headlineSmall,
-            textAlign = TextAlign.Center,
+            style = LatentType.Title,
+            color = LatentInk.Full,
+            align = TextAlign.Center,
         )
-        Text(
+        LatentText(
             modifier = Modifier.padding(top = 12.dp, bottom = 28.dp),
             text = rationale(purpose, permanentlyDenied),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
+            style = LatentType.Body,
+            color = LatentInk.Medium,
+            align = TextAlign.Center,
         )
-        Button(onClick = onRetry) {
-            Text(
-                when {
-                    permanentlyDenied -> "Open settings"
-                    purpose == AccessPurpose.Viewfinder -> "Allow camera"
-                    else -> "Allow storage"
-                },
-            )
-        }
+        LatentButton(
+            label = when {
+                permanentlyDenied -> "Open settings"
+                purpose == AccessPurpose.Viewfinder -> "Allow camera"
+                else -> "Allow storage"
+            },
+            onClick = onRetry,
+        )
+        Spacer(Modifier.height(8.dp))
     }
 }
 

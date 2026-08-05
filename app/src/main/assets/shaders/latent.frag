@@ -99,10 +99,24 @@ float lodForRadius(float radius) {
 }
 
 // ---------------------------------------------------------------- stage 5
-// Value noise rather than per-pixel hash: film grain has a size, and white noise
-// resamples into mush the moment the image is scaled.
+// Film grain is particles, not noise.
+//
+// That distinction is the whole stage. Smooth interpolated noise produces gradients
+// — soft blotches that the eye files under dirty sensor or bad compression. A film
+// emulsion produces discrete silver crystals that clumped as they formed: hard little
+// edges at one scale, clouds of them at a coarser one, and clear gelatin in between.
+// Each piece below is one of those properties, and dropping any of them takes the
+// stage back to looking digital.
+
+// Integer-style hash rather than the usual fract(sin(dot(p, k)) * big). The sine
+// version loses precision once its argument gets large, and the argument here is a
+// cell index that runs into the hundreds across the frame — the cost is faint
+// diagonal structure, which the eye reads as a pattern laid over the picture rather
+// than as grain in it.
 float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+    vec3 q = fract(vec3(p.xyx) * 0.1031);
+    q += dot(q, q.yzx + 33.33);
+    return fract((q.x + q.y) * q.z);
 }
 
 float valueNoise(vec2 p) {
@@ -115,6 +129,57 @@ float valueNoise(vec2 p) {
     float d = hash(cell + vec2(1.0, 1.0));
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
+
+// Each octave is turned against the last. Value noise lives on an axis-aligned
+// lattice and stacking octaves on the same lattice keeps every row and column lined
+// up, which is exactly the regularity that gives noise away. Roughly 37 degrees, so
+// no octave shares an axis with any other.
+const mat2 GRAIN_TURN = mat2(0.8018, -0.5976, 0.5976, 0.8018);
+
+// Three scales, because a grain is not the only thing you can see in a grainy frame.
+// The middle octave is the grain itself, at the size the recipe asked for. The coarse
+// one is the clumping — patches where the emulsion happened to be denser — and it is
+// the single thing that most separates film from sensor noise. The fine one is the
+// crystal edge, which keeps the texture from turning soft when the same recipe is
+// rendered at export size.
+float grainField(vec2 p) {
+    float n = valueNoise(GRAIN_TURN * p * 0.47 + 11.3) * 0.28;
+    n += valueNoise(p) * 0.50;
+    n += valueNoise(GRAIN_TURN * p * 2.13 + 5.7) * 0.22;
+    return n;
+}
+
+// How hard the particles are. Higher is more bimodal — more grain, less haze.
+const float GRAIN_HARDNESS = 2.3;
+
+// Hardening moves energy out of the middle of the distribution and into the edges,
+// which raises the spread of the field by about half again. Scaling that back means
+// `grain` still means the depth of modulation it meant before — a recipe someone
+// saved last week grades to the same weight of grain today, in a different shape.
+const float GRAIN_NORMALISE = 0.69;
+
+// The curve that turns the field above from cloud into particles.
+//
+// Stacking octaves pulls the distribution towards its middle (three averaged randoms
+// are far more Gaussian than one), and the middle is precisely the soft grey mush
+// that does not look like film. Steepening the centre pushes those values apart
+// again, so most of the frame settles at clear or exposed and the transition between
+// them collapses into an edge. Without this the stage is a blur; with it, it is grain.
+float harden(float n) {
+    n = clamp(n, 0.0, 1.0);
+    return n < 0.5
+        ? 0.5 * pow(2.0 * n, GRAIN_HARDNESS)
+        : 1.0 - 0.5 * pow(2.0 - 2.0 * n, GRAIN_HARDNESS);
+}
+
+// Grain is a property of the picture, not of the pixel grid it happens to be rendered
+// on. `grainSize` is therefore read as pixels *at this reference frame size* and
+// converted to a cell count across the frame, so the preview at ~1080 and a 3000px
+// export lay down the same number of grains and the viewfinder is telling the truth
+// about the file. Tying it to the real pixel count instead — which is what a naive
+// `frameSize / grainSize` does — makes grain that is plainly visible in the export
+// invisible in the preview, and vice versa.
+const float GRAIN_REFERENCE = 1024.0;
 
 void main() {
     // Stages 1 and 2.
@@ -137,12 +202,18 @@ void main() {
         l = 1.0 - (1.0 - l) * (1.0 - clamp(glow, 0.0, 1.0));
     }
 
-    // Stage 5 — grain, weighted towards the midtones. Clear film base and blocked
-    // shadows carry almost no grain; the middle of the curve carries all of it.
-    if (grain != 0.0) {
-        float weight = 4.0 * l * (1.0 - l);
-        vec2 grainCoord = vTexCoord * (frameSize / max(grainSize, 0.5));
-        l = clamp(l + grain * weight * (valueNoise(grainCoord) - 0.5), 0.0, 1.0);
+    // Stage 5 — grain, loudest through the midtones.
+    //
+    // Loudest, but never nothing. A weight that falls to zero at both ends leaves
+    // clean white skies and glassy blacks sitting in the middle of a textured frame,
+    // and that combination is the tell of an effect applied to a digital picture:
+    // stock that recorded anything recorded some texture with it. The floor is what
+    // carries the grain up into the highlights, where a projected print shows it.
+    if (grain > 0.0) {
+        float weight = mix(0.3, 1.0, 4.0 * l * (1.0 - l));
+        float cells = GRAIN_REFERENCE / max(grainSize, 0.5);
+        float particle = (harden(grainField(vTexCoord * cells)) - 0.5) * GRAIN_NORMALISE;
+        l = clamp(l + grain * weight * particle, 0.0, 1.0);
     }
 
     // Stage 6 — toning. Cool selenium through neutral to warm sepia.

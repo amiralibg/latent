@@ -1,10 +1,9 @@
 package com.latent.camera.ui.gallery
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -23,8 +21,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -32,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
@@ -40,6 +37,10 @@ import com.latent.camera.data.CaptureRecord
 import com.latent.camera.ui.BackIcon
 import com.latent.camera.ui.ChromeIconButton
 import com.latent.camera.ui.theme.LatentInk
+import com.latent.camera.ui.theme.LatentText
+import com.latent.camera.ui.theme.LatentType
+import com.latent.camera.ui.theme.Motion
+import com.latent.camera.ui.theme.tactile
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -77,15 +78,15 @@ fun ContactSheet(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ChromeIconButton(onClick = onBack, active = false) { BackIcon() }
-            Text(
+            LatentText(
                 text = "FRAMES",
-                style = MaterialTheme.typography.labelMedium,
+                style = LatentType.LabelMedium,
                 color = LatentInk.Strong,
             )
             Spacer(Modifier.weight(1f))
-            Text(
+            LatentText(
                 text = captures.size.toString(),
-                style = MaterialTheme.typography.bodyMedium,
+                style = LatentType.Readout,
                 color = LatentInk.Soft,
                 modifier = Modifier.padding(end = 16.dp),
             )
@@ -93,11 +94,11 @@ fun ContactSheet(
 
         if (captures.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
+                LatentText(
                     text = "NOTHING SHOT YET",
-                    style = MaterialTheme.typography.labelMedium,
+                    style = LatentType.LabelMedium,
                     color = LatentInk.Soft,
-                    textAlign = TextAlign.Center,
+                    align = TextAlign.Center,
                 )
             }
             return@Column
@@ -132,22 +133,28 @@ private fun ContactCell(record: CaptureRecord, cellPx: Int, onClick: () -> Unit)
     val uri = remember(record.outputUri) { android.net.Uri.parse(record.outputUri) }
     val bitmap by rememberThumbnail(uri.takeIf { cellPx > 0 }, cellPx.coerceAtLeast(1))
 
+    // Cells decode off the main thread and land whenever they land. Fading each one in
+    // as it arrives turns a grid that pops into a sheet that develops.
+    val arrival by animateFloatAsState(
+        targetValue = if (bitmap != null) 1f else 0f,
+        animationSpec = Motion.enter(),
+        label = "cellArrival",
+    )
+
     Box(
         modifier = Modifier
             .aspectRatio(1f)
-            .background(LatentInk.Wash)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            ),
+            .tactile(pressScale = 0.96f, onClick = onClick)
+            .background(LatentInk.Wash),
     ) {
         bitmap?.let {
             Image(
                 bitmap = it,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = arrival },
             )
         }
         // A re-grade sits in the sheet next to the render it came from; the dot is

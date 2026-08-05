@@ -1,12 +1,24 @@
 package com.latent.camera.ui
 
 import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,30 +32,37 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.latent.camera.camera.CameraState
 import com.latent.camera.camera.Lens
 import com.latent.camera.camera.MeteredValues
+import com.latent.camera.look.Recipe
 import com.latent.camera.settings.SaveMode
 import com.latent.camera.ui.gallery.rememberThumbnail
 import com.latent.camera.ui.theme.LatentInk
+import com.latent.camera.ui.theme.LatentText
+import com.latent.camera.ui.theme.LatentType
+import com.latent.camera.ui.theme.Motion
+import com.latent.camera.ui.theme.tactile
 import kotlin.math.roundToInt
 
 /**
@@ -66,10 +85,18 @@ fun LensPicker(
     ) {
         val showZoom = active == null ||
             lenses.none { kotlin.math.abs(it.zoomRatio - zoomRatio) < 0.05f }
-        if (showZoom && lenses.size >= 2) {
-            Text(
+
+        // The ratio only appears once you are between the physical lenses, and it
+        // fades rather than blinks, because pinching is a continuous gesture and a
+        // readout that pops in mid-pinch reads as a glitch.
+        AnimatedVisibility(
+            visible = showZoom && lenses.size >= 2,
+            enter = fadeIn(Motion.enter()),
+            exit = fadeOut(Motion.leave()),
+        ) {
+            LatentText(
                 text = formatZoom(zoomRatio),
-                style = MaterialTheme.typography.bodyMedium,
+                style = LatentType.Readout,
                 color = LatentInk.Strong,
                 modifier = Modifier.padding(bottom = 8.dp),
             )
@@ -96,30 +123,39 @@ fun LensPicker(
 
 @Composable
 private fun LensDisc(label: String, selected: Boolean, onClick: () -> Unit) {
-    val size = if (selected) 36.dp else 30.dp
+    val size by animateDpAsState(
+        targetValue = if (selected) 36.dp else 30.dp,
+        animationSpec = Motion.settle(),
+        label = "lensDiscSize",
+    )
+    val fill by animateColorAsState(
+        targetValue = if (selected) LatentInk.Full else LatentInk.Wash,
+        animationSpec = Motion.state(),
+        label = "lensDiscFill",
+    )
+    val ink by animateColorAsState(
+        targetValue = if (selected) Color.Black else LatentInk.Strong,
+        animationSpec = Motion.state(),
+        label = "lensDiscInk",
+    )
+
     Box(
         modifier = Modifier
             .size(size)
+            .tactile(onClick = onClick)
             .clip(CircleShape)
-            .background(if (selected) LatentInk.Full else LatentInk.Wash)
+            .background(fill)
             .border(
                 width = 1.dp,
                 color = if (selected) Color.Transparent else LatentInk.Faint,
                 shape = CircleShape,
-            )
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
+        LatentText(
             text = label,
-            fontFamily = FontFamily.SansSerif,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = if (selected) 12.sp else 11.sp,
-            color = if (selected) Color.Black else LatentInk.Strong,
+            style = LatentType.Readout.copy(fontSize = if (selected) 12.sp else 11.sp),
+            color = ink,
         )
     }
 }
@@ -135,6 +171,14 @@ fun MeterOverlay(
     onClearFocusLock: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Three mutually exclusive things want this strip. Crossfading between them keeps
+    // a transient warning from feeling like the meter crashed and came back.
+    val mode = when {
+        state.error != null -> MeterMode.Error
+        state.handheldWarning -> MeterMode.Warning
+        else -> MeterMode.Values
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -146,36 +190,28 @@ fun MeterOverlay(
             )
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
-        when {
-            state.error != null -> {
-                Text(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .clickable(onClick = onDismissError),
-                    text = state.error.uppercase(),
-                    style = MaterialTheme.typography.labelMedium,
+        Crossfade(
+            targetState = mode,
+            animationSpec = tween(180, easing = Motion.Sharp),
+            label = "meterMode",
+            modifier = Modifier.align(Alignment.Center),
+        ) { current ->
+            when (current) {
+                MeterMode.Error -> LatentText(
+                    modifier = Modifier.tactile(onClick = onDismissError),
+                    text = state.error.orEmpty().uppercase(),
+                    style = LatentType.LabelMedium,
                     color = LatentInk.Warn,
                 )
-            }
-            state.handheldWarning -> {
-                Text(
-                    modifier = Modifier.align(Alignment.Center),
-                    text = "HOLD STEADY",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = LatentInk.Warn,
-                )
-            }
-            else -> {
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .then(
-                            if (state.focus?.locked == true) {
-                                Modifier.clickable(onClick = onClearFocusLock)
-                            } else {
-                                Modifier
-                            },
-                        ),
+
+                MeterMode.Warning -> PulsingWarning("HOLD STEADY")
+
+                MeterMode.Values -> Row(
+                    modifier = if (state.focus?.locked == true) {
+                        Modifier.tactile(onClick = onClearFocusLock)
+                    } else {
+                        Modifier
+                    },
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -209,20 +245,39 @@ fun MeterOverlay(
     }
 }
 
+private enum class MeterMode { Error, Warning, Values }
+
+/** A warning you are meant to act on within the second, so it breathes. */
+@Composable
+private fun PulsingWarning(text: String) {
+    val transition = rememberInfiniteTransition(label = "warningPulse")
+    val alpha by transition.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(620, easing = Motion.Sharp),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "warningAlpha",
+    )
+    LatentText(
+        text = text,
+        style = LatentType.LabelMedium,
+        color = LatentInk.Warn.copy(alpha = alpha),
+    )
+}
+
 @Composable
 private fun MeterCell(label: String, value: String, emphasize: Boolean) {
+    val ink by animateColorAsState(
+        targetValue = if (emphasize) LatentInk.Full else LatentInk.Strong,
+        animationSpec = Motion.state(),
+        label = "meterInk",
+    )
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = LatentInk.Soft,
-        )
+        LatentText(text = label, style = LatentType.LabelSmall, color = LatentInk.Soft)
         Spacer(Modifier.height(2.dp))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (emphasize) LatentInk.Full else LatentInk.Strong,
-        )
+        LatentText(text = value, style = LatentType.Readout, color = ink)
     }
 }
 
@@ -245,9 +300,13 @@ private fun MeterHairline() {
 @Composable
 fun ViewfinderTopBar(
     state: CameraState,
+    recipe: Recipe,
     aidsOpen: Boolean,
     onTimerCycle: () -> Unit,
     onSilentToggle: () -> Unit,
+    onGrainCycle: () -> Unit,
+    onEditRecipe: () -> Unit,
+    onFlipCamera: () -> Unit,
     onToggleAids: () -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -263,13 +322,22 @@ fun ViewfinderTopBar(
             active = state.timerSeconds > 0 || state.countdown > 0,
             badge = state.timerSeconds.takeIf { it > 0 }?.toString(),
         ) {
-            TimerIcon(
-                seconds = state.timerSeconds,
-                active = state.timerSeconds > 0 || state.countdown > 0,
-            )
+            TimerIcon(active = state.timerSeconds > 0 || state.countdown > 0)
         }
         ChromeIconButton(onClick = onSilentToggle, active = state.silentShutter) {
             SoundIcon(silent = state.silentShutter)
+        }
+
+        // Grain is the one look stage worth a control up here. It is the stage people
+        // reach for constantly, it is the stage that has to be judged against the live
+        // picture rather than a slider, and the icon doubles as its readout. Tap
+        // cycles the stocks; hold opens the recipe if you want the numbers.
+        ChromeIconButton(
+            onClick = onGrainCycle,
+            onLongClick = onEditRecipe,
+            active = recipe.grain > 0.001f,
+        ) {
+            GrainIcon(amount = recipe.grain, grainSize = recipe.grainSize)
         }
 
         Spacer(Modifier.weight(1f))
@@ -280,17 +348,29 @@ fun ViewfinderTopBar(
             SaveMode.BwAndOriginal -> null
             SaveMode.BwOriginalAndDng -> "DNG"
         }
-        if (saveLabel != null) {
-            Text(
-                text = saveLabel,
-                style = MaterialTheme.typography.labelSmall,
+        AnimatedVisibility(
+            visible = saveLabel != null,
+            enter = fadeIn(Motion.enter()) + expandHorizontally(Motion.resize()),
+            exit = fadeOut(Motion.leave()) + shrinkHorizontally(Motion.resize()),
+        ) {
+            LatentText(
+                text = saveLabel.orEmpty(),
+                style = LatentType.LabelSmall,
                 color = LatentInk.Medium,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(3.dp))
+                    .padding(end = 4.dp)
+                    .clip(RoundedCornerShape(4.dp))
                     .background(LatentInk.Wash)
                     .padding(horizontal = 7.dp, vertical = 4.dp),
             )
-            Spacer(Modifier.width(4.dp))
+        }
+
+        // Only on a device that actually has a second camera — a control that does
+        // nothing is worse than no control.
+        if (state.hasFrontCamera) {
+            ChromeIconButton(onClick = onFlipCamera, active = state.frontFacing) {
+                FlipIcon(front = state.frontFacing)
+            }
         }
 
         ChromeIconButton(onClick = onToggleAids, active = aidsOpen) {
@@ -326,12 +406,17 @@ fun CaptureBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-            GalleryButton(uri = lastCaptureUri, onClick = onOpenGallery)
+            GalleryButton(
+                uri = lastCaptureUri,
+                framesShot = state.framesThisSession,
+                onClick = onOpenGallery,
+            )
         }
 
         ShutterButton(
             enabled = shutterEnabled,
             countingDown = state.countdown > 0,
+            saving = state.inFlight > 0,
             onClick = onShutter,
         )
 
@@ -356,24 +441,47 @@ fun CaptureBar(
  * The last frame, as a small square beside the shutter, and the way into the contact
  * sheet. Showing the shot rather than an icon is what makes a capture feel like it
  * landed somewhere — the frame counter says a number, this says which picture.
+ *
+ * It kicks when a new frame arrives. That kick is the only confirmation the app gives
+ * that a shot was written, and it is deliberately in the corner of the eye rather than
+ * over the picture: you should be able to keep shooting through it.
  */
 @Composable
-fun GalleryButton(uri: Uri?, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun GalleryButton(
+    uri: Uri?,
+    framesShot: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val density = LocalDensity.current
     val sidePx = with(density) { GalleryButtonSide.roundToPx() }
     val thumbnail by rememberThumbnail(uri, sidePx)
 
+    var landed by remember { mutableStateOf(false) }
+    LaunchedEffect(framesShot) {
+        if (framesShot > 0) {
+            landed = true
+            kotlinx.coroutines.delay(220)
+            landed = false
+        }
+    }
+    val kick by animateFloatAsState(
+        targetValue = if (landed) 1.16f else 1f,
+        animationSpec = Motion.settle(),
+        label = "galleryKick",
+    )
+
     Box(
         modifier = modifier
             .size(GalleryButtonSide)
-            .clip(RoundedCornerShape(3.dp))
+            .tactile(onClick = onClick)
+            .graphicsLayer {
+                scaleX = kick
+                scaleY = kick
+            }
+            .clip(RoundedCornerShape(4.dp))
             .background(LatentInk.Wash)
-            .border(1.dp, LatentInk.Faint, RoundedCornerShape(3.dp))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            ),
+            .border(1.dp, LatentInk.Faint, RoundedCornerShape(4.dp)),
         contentAlignment = Alignment.Center,
     ) {
         val frame = thumbnail
@@ -392,76 +500,187 @@ fun GalleryButton(uri: Uri?, onClick: () -> Unit, modifier: Modifier = Modifier)
 
 private val GalleryButtonSide = 44.dp
 
+/** The lit disc inside a 48dp target. Small enough that neighbours stay separate. */
+private val ChromeDiscSide = 38.dp
+
 @Composable
 fun ChromeIconButton(
     onClick: () -> Unit,
     active: Boolean,
     badge: String? = null,
+    onLongClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
+    val wash by animateColorAsState(
+        targetValue = if (active) LatentInk.Wash else Color.Transparent,
+        animationSpec = Motion.state(),
+        label = "chromeWash",
+    )
+
+    // The touch target and the disc are deliberately different sizes. The target stays
+    // thumb-sized; the wash is drawn smaller and centred inside it, so two lit buttons
+    // sitting next to each other read as two buttons rather than one long blob. Sizing
+    // the background to the hit area is what made the top row look like a smear.
     Box(
         modifier = Modifier
             .size(48.dp)
-            .clip(CircleShape)
-            .background(if (active) LatentInk.Wash else Color.Transparent)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            ),
+            .tactile(onLongClick = onLongClick, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        content()
-        if (badge != null) {
-            Text(
-                text = badge,
-                style = MaterialTheme.typography.labelSmall,
+        Box(
+            modifier = Modifier
+                .size(ChromeDiscSide)
+                .clip(CircleShape)
+                .background(wash),
+            contentAlignment = Alignment.Center,
+        ) {
+            content()
+        }
+        AnimatedVisibility(
+            visible = badge != null,
+            enter = fadeIn(Motion.enter()),
+            exit = fadeOut(Motion.leave()),
+            modifier = Modifier.align(Alignment.TopEnd),
+        ) {
+            LatentText(
+                text = badge.orEmpty(),
+                style = LatentType.LabelSmall,
                 color = LatentInk.Full,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 6.dp, end = 6.dp),
+                modifier = Modifier.padding(top = 6.dp, end = 6.dp),
             )
         }
     }
 }
 
+/**
+ * The shutter.
+ *
+ * Two rings and a disc. The disc answers the finger; the outer ring carries state that
+ * is not about this press — a countdown running, a frame still being written — so the
+ * thing under the thumb never has to mean two things at once. Nothing here gates the
+ * click: the button is never disabled while a save is in flight, because the app's
+ * first rule is that the next frame is always available.
+ */
 @Composable
 fun ShutterButton(
     enabled: Boolean,
     countingDown: Boolean,
+    saving: Boolean,
     onClick: () -> Unit,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val alpha = when {
-        !enabled -> 0.28f
-        countingDown -> 0.55f
-        else -> 1f
-    }
+    val alpha by animateFloatAsState(
+        targetValue = when {
+            !enabled -> 0.28f
+            countingDown -> 0.55f
+            else -> 1f
+        },
+        animationSpec = Motion.state(),
+        label = "shutterAlpha",
+    )
+
+    val transition = rememberInfiniteTransition(label = "shutterActivity")
+    val sweep by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(animation = tween(900, easing = Motion.Sharp)),
+        label = "shutterSweep",
+    )
+    val breathe by transition.animateFloat(
+        initialValue = 0.94f,
+        targetValue = 1.04f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(560, easing = Motion.Sharp),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "shutterBreathe",
+    )
+
+    val ringScale by animateFloatAsState(
+        targetValue = if (countingDown) breathe else 1f,
+        animationSpec = Motion.state(),
+        label = "shutterRing",
+    )
 
     Box(
-        modifier = Modifier
-            .size(84.dp)
-            .clip(CircleShape)
-            .border(1.5.dp, LatentInk.Full.copy(alpha = alpha), CircleShape)
-            .padding(5.dp)
-            .border(1.dp, LatentInk.Full.copy(alpha = alpha * 0.35f), CircleShape)
-            .padding(4.dp)
-            .clip(CircleShape)
-            .background(LatentInk.Full.copy(alpha = alpha))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                enabled = enabled,
-                onClick = onClick,
-            ),
-    )
+        modifier = Modifier.size(84.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = ringScale
+                    scaleY = ringScale
+                },
+        ) {
+            val stroke = 1.5.dp.toPx()
+            drawCircle(
+                color = LatentInk.Full.copy(alpha = alpha),
+                radius = size.minDimension / 2f - stroke / 2f,
+                style = Stroke(width = stroke),
+            )
+            // A frame is still being written. The arc is on the ring rather than over
+            // the picture, and it never touches the disc, so it cannot be mistaken for
+            // the shutter being busy.
+            if (saving) {
+                val inset = stroke * 2.5f
+                drawArc(
+                    color = LatentInk.Full,
+                    startAngle = sweep,
+                    sweepAngle = 66f,
+                    useCenter = false,
+                    topLeft = Offset(inset, inset),
+                    size = Size(size.width - inset * 2, size.height - inset * 2),
+                    style = Stroke(width = stroke, cap = StrokeCap.Round),
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .size(62.dp)
+                .tactile(
+                    enabled = enabled,
+                    pressScale = 0.84f,
+                    pressAlpha = 0.9f,
+                    haptic = null,
+                    onClick = onClick,
+                )
+                .clip(CircleShape)
+                .background(LatentInk.Full.copy(alpha = alpha)),
+        )
+    }
 }
 
 /** Focus reticle — corner brackets, not a filled box sitting on the frame. */
 @Composable
 fun FocusReticle(locked: Boolean, modifier: Modifier = Modifier) {
     val color = if (locked) LatentInk.Lock else LatentInk.Full
-    Canvas(modifier = modifier.size(64.dp)) {
+
+    // Lands slightly large and settles, which is what makes tap-to-focus feel like it
+    // was aimed rather than like a box that appeared.
+    var arrived by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { arrived = true }
+    val scale by animateFloatAsState(
+        targetValue = if (arrived) 1f else 1.35f,
+        animationSpec = Motion.settle(),
+        label = "reticleScale",
+    )
+    val fade by animateFloatAsState(
+        targetValue = if (arrived) 1f else 0f,
+        animationSpec = Motion.enter(),
+        label = "reticleFade",
+    )
+
+    Canvas(
+        modifier = modifier
+            .size(64.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                alpha = fade
+            },
+    ) {
         val stroke = 1.5.dp.toPx()
         val arm = 14.dp.toPx()
         val w = size.width

@@ -1,10 +1,10 @@
 package com.latent.camera.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,8 +18,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -33,16 +31,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.latent.camera.look.Recipe
+import com.latent.camera.ui.theme.Feedback
 import com.latent.camera.ui.theme.LatentInk
-import kotlinx.coroutines.flow.distinctUntilChanged
+import com.latent.camera.ui.theme.LatentText
+import com.latent.camera.ui.theme.LatentType
+import com.latent.camera.ui.theme.Motion
+import com.latent.camera.ui.theme.tactile
 import kotlin.math.abs
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 private val ItemWidth = 120.dp
 
@@ -104,16 +107,27 @@ fun RecipeStrip(
     // comparison honest without restarting the flow.
     val currentActive by rememberUpdatedState(activeIndex)
 
+    // Only the *end of a scroll* selects. The obvious version of this — "whenever the
+    // centred item changes and we are not scrolling" — also fires on plain relayout,
+    // and the strip relayouts for reasons that have nothing to do with the user: the
+    // first measure before `widthPx` is known and the side padding exists, and every
+    // re-emission of the recipe list. Editing a recipe re-emits the list, so cycling
+    // grain would silently load whichever recipe happened to sit under the centre
+    // during that frame. Keying on the falling edge of `isScrollInProgress` means a
+    // selection can only come from a finger.
     LaunchedEffect(listState) {
-        snapshotFlow {
-            centredIndex to listState.isScrollInProgress
-        }
+        var wasScrolling = false
+        snapshotFlow { listState.isScrollInProgress }
             .distinctUntilChanged()
-            .collect { (index, scrolling) ->
-                if (!scrolling && index != currentActive) {
-                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    onSelect(index)
+            .collect { scrolling ->
+                if (wasScrolling && !scrolling) {
+                    val index = centredIndex
+                    if (index != currentActive) {
+                        Feedback.tick(haptics)
+                        onSelect(index)
+                    }
                 }
+                wasScrolling = scrolling
             }
     }
 
@@ -166,18 +180,43 @@ private fun isItemCentered(
     return abs(itemCentre - viewportCentre) < itemWidthPx * 0.15f
 }
 
+/**
+ * One recipe in the strip.
+ *
+ * The loaded one is bigger, brighter and carries a dot. Three signals for one state is
+ * not redundancy here: the strip is read at a glance, mid-swipe, out of the corner of
+ * the eye, and the dot is the part that survives all three. Tapping the loaded recipe
+ * opens it for editing, which is why the whole cell — not just the label — is the
+ * target.
+ */
 @Composable
 private fun RecipeLabel(name: String, selected: Boolean, onClick: () -> Unit) {
-    val interactionSource = remember { MutableInteractionSource() }
+    val emphasis by animateFloatAsState(
+        targetValue = if (selected) 1f else 0.88f,
+        animationSpec = Motion.settle(),
+        label = "recipeEmphasis",
+    )
+    val ink by animateColorAsState(
+        targetValue = if (selected) LatentInk.Full else LatentInk.Soft,
+        animationSpec = Motion.state(),
+        label = "recipeInk",
+    )
+    val wash by animateColorAsState(
+        targetValue = if (selected) LatentInk.Wash else Color.Transparent,
+        animationSpec = Motion.state(),
+        label = "recipeWash",
+    )
+    val dot by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = Motion.settle(),
+        label = "recipeDot",
+    )
+
     Column(
         modifier = Modifier
             .width(ItemWidth)
             .height(RecipeStripHeight)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
+            .tactile(pressScale = 0.95f, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -186,15 +225,19 @@ private fun RecipeLabel(name: String, selected: Boolean, onClick: () -> Unit) {
                 .fillMaxWidth(),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
+            LatentText(
                 text = name.uppercase(),
-                style = MaterialTheme.typography.labelLarge,
-                textAlign = TextAlign.Center,
+                style = LatentType.Label,
+                align = TextAlign.Center,
                 maxLines = 1,
-                color = if (selected) LatentInk.Full else LatentInk.Soft,
+                color = ink,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(7.dp))
-                    .background(if (selected) LatentInk.Wash else Color.Transparent)
+                    .graphicsLayer {
+                        scaleX = emphasis
+                        scaleY = emphasis
+                    }
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(wash)
                     .padding(horizontal = 14.dp, vertical = 7.dp),
             )
         }
@@ -202,8 +245,12 @@ private fun RecipeLabel(name: String, selected: Boolean, onClick: () -> Unit) {
             modifier = Modifier
                 .padding(bottom = 4.dp)
                 .size(3.dp)
+                .graphicsLayer {
+                    scaleX = dot
+                    scaleY = dot
+                }
                 .clip(CircleShape)
-                .background(if (selected) LatentInk.Full else LatentInk.Faint.copy(alpha = 0f)),
+                .background(LatentInk.Full),
         )
     }
 }

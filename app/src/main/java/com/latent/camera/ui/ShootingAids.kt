@@ -1,9 +1,8 @@
 package com.latent.camera.ui
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -11,12 +10,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,28 +22,36 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.latent.camera.settings.AidsSettings
 import com.latent.camera.settings.AidsState
 import com.latent.camera.settings.GridMode
+import com.latent.camera.ui.theme.Feedback
+import com.latent.camera.ui.theme.LatentChip
 import com.latent.camera.ui.theme.LatentInk
+import com.latent.camera.ui.theme.Motion
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
-private val AidChipShape = RoundedCornerShape(4.dp)
-
 /**
  * Compose overlays that never touch the graded GL frame — grids, level, histogram.
  * Peaking and zebra are drawn in the preview-only GL pass instead.
+ *
+ * The grid fades between modes rather than cutting. Cycling four grids with a hard cut
+ * looks like the frame is flickering; fading makes it obvious that one set of lines is
+ * being replaced by another.
  */
 @Composable
 fun GridOverlay(mode: GridMode, modifier: Modifier = Modifier) {
-    if (mode == GridMode.Off) return
-    val color = LatentInk.Full.copy(alpha = 0.28f)
+    val presence by animateFloatAsState(
+        targetValue = if (mode == GridMode.Off) 0f else 1f,
+        animationSpec = Motion.state(),
+        label = "gridPresence",
+    )
+    if (mode == GridMode.Off && presence <= 0.01f) return
+    val color = LatentInk.Full.copy(alpha = 0.28f * presence)
     Canvas(modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
@@ -83,6 +88,15 @@ fun GridOverlay(mode: GridMode, modifier: Modifier = Modifier) {
 fun LevelOverlay(rollDegrees: Float, modifier: Modifier = Modifier) {
     val level = abs(rollDegrees) < 0.8f
     val color = if (level) LatentInk.Lock else LatentInk.Full.copy(alpha = 0.75f)
+
+    // The centre dot swells the moment the horizon comes true, so levelling can be
+    // done in peripheral vision instead of by reading the line's angle.
+    val lock by animateFloatAsState(
+        targetValue = if (level) 1f else 0f,
+        animationSpec = Motion.settle(),
+        label = "levelLock",
+    )
+
     Canvas(modifier.fillMaxSize()) {
         val cx = size.width / 2f
         val cy = size.height / 2f
@@ -114,8 +128,12 @@ fun LevelOverlay(rollDegrees: Float, modifier: Modifier = Modifier) {
             strokeWidth = 1.dp.toPx(),
             cap = StrokeCap.Round,
         )
-        if (level) {
-            drawCircle(color = LatentInk.Lock, radius = 3.dp.toPx(), center = Offset(cx, cy))
+        if (lock > 0.01f) {
+            drawCircle(
+                color = LatentInk.Lock.copy(alpha = lock),
+                radius = 3.dp.toPx() * (0.4f + 0.6f * lock),
+                center = Offset(cx, cy),
+            )
         }
     }
 }
@@ -160,6 +178,11 @@ fun HistogramOverlay(bins: FloatArray?, modifier: Modifier = Modifier) {
 /**
  * Compact toggles for shooting aids. Lives above the capture deck so the shutter
  * reach never changes.
+ *
+ * Every toggle answers twice: the chip lights, and the phone ticks in the direction
+ * the setting went. On/off haptics are distinguishable by feel, which matters here
+ * more than anywhere else in the app — these are the controls you change with the
+ * camera already raised.
  */
 @Composable
 fun AidsBar(
@@ -167,48 +190,46 @@ fun AidsBar(
     settings: AidsSettings,
     modifier: Modifier = Modifier,
 ) {
+    val haptics = LocalHapticFeedback.current
+
     Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AidToggle("PEAK", aids.peaking) { settings.setPeaking(!aids.peaking) }
-        AidToggle("ZEBRA", aids.zebra) { settings.setZebra(!aids.zebra) }
-        AidToggle("HIST", aids.histogram) { settings.setHistogram(!aids.histogram) }
-        AidToggle("LEVEL", aids.level) { settings.setLevel(!aids.level) }
-        AidToggle(
+        LatentChip("PEAK", aids.peaking, horizontalPadding = 10.dp, verticalPadding = 7.dp, onClick = {
+            Feedback.toggle(haptics, !aids.peaking)
+            settings.setPeaking(!aids.peaking)
+        })
+        LatentChip("ZEBRA", aids.zebra, horizontalPadding = 10.dp, verticalPadding = 7.dp, onClick = {
+            Feedback.toggle(haptics, !aids.zebra)
+            settings.setZebra(!aids.zebra)
+        })
+        LatentChip("HIST", aids.histogram, horizontalPadding = 10.dp, verticalPadding = 7.dp, onClick = {
+            Feedback.toggle(haptics, !aids.histogram)
+            settings.setHistogram(!aids.histogram)
+        })
+        LatentChip("LEVEL", aids.level, horizontalPadding = 10.dp, verticalPadding = 7.dp, onClick = {
+            Feedback.toggle(haptics, !aids.level)
+            settings.setLevel(!aids.level)
+        })
+        LatentChip(
             label = when (aids.grid) {
                 GridMode.Off -> "GRID"
-                GridMode.Thirds -> "3rds"
+                GridMode.Thirds -> "3RDS"
                 GridMode.Centre -> "CROSS"
                 GridMode.Diagonals -> "DIAG"
                 GridMode.Golden -> "φ"
             },
-            active = aids.grid != GridMode.Off,
-            onClick = { settings.cycleGrid() },
+            selected = aids.grid != GridMode.Off,
+            horizontalPadding = 10.dp,
+            verticalPadding = 7.dp,
+            onClick = {
+                Feedback.tick(haptics)
+                settings.cycleGrid()
+            },
         )
     }
-}
-
-@Composable
-private fun AidToggle(label: String, active: Boolean, onClick: () -> Unit) {
-    Text(
-        text = label,
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Medium,
-        fontSize = 10.sp,
-        letterSpacing = 0.8.sp,
-        color = if (active) LatentInk.Full else LatentInk.Soft,
-        modifier = Modifier
-            .clip(AidChipShape)
-            .background(if (active) LatentInk.Wash else Color.Transparent)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            )
-            .padding(horizontal = 10.dp, vertical = 7.dp),
-    )
 }

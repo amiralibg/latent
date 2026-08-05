@@ -3,10 +3,13 @@ package com.latent.camera.ui.gallery
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,8 +26,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,18 +36,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import com.latent.camera.data.CaptureRecord
 import com.latent.camera.look.Recipe
 import com.latent.camera.ui.BackIcon
-import com.latent.camera.ui.ChromeIconButton
 import com.latent.camera.ui.CheckIcon
+import com.latent.camera.ui.ChromeIconButton
 import com.latent.camera.ui.DeleteIcon
 import com.latent.camera.ui.RegradeIcon
 import com.latent.camera.ui.ShareIcon
+import com.latent.camera.ui.theme.Feedback
 import com.latent.camera.ui.theme.LatentInk
+import com.latent.camera.ui.theme.LatentText
+import com.latent.camera.ui.theme.LatentType
+import com.latent.camera.ui.theme.Motion
+import com.latent.camera.ui.theme.tactile
 
 /**
  * One frame, full width, with the shooting data under it and the three things you can
@@ -123,15 +131,15 @@ fun FrameViewer(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ChromeIconButton(onClick = onBack, active = false) { BackIcon() }
-            Text(
+            LatentText(
                 text = current?.let { formatCapturedAt(it.capturedAt) }.orEmpty(),
-                style = MaterialTheme.typography.bodySmall,
+                style = LatentType.Body,
                 color = LatentInk.Medium,
             )
             Spacer(Modifier.weight(1f))
-            Text(
+            LatentText(
                 text = "${pagerState.currentPage + 1}/${captures.size}",
-                style = MaterialTheme.typography.bodyMedium,
+                style = LatentType.Readout,
                 color = LatentInk.Soft,
                 modifier = Modifier.padding(end = 16.dp),
             )
@@ -151,6 +159,15 @@ fun FrameViewer(
             val uri = remember(record.outputUri) { Uri.parse(record.outputUri) }
             val bitmap by rememberThumbnail(uri, viewerPx)
 
+            // A full-width frame takes a moment to decode. Fading it up out of the
+            // empty square is the honest version of that wait: the alternative is a
+            // grey box that abruptly becomes a photograph.
+            val arrival by animateFloatAsState(
+                targetValue = if (bitmap != null) 1f else 0f,
+                animationSpec = Motion.enter(),
+                label = "frameArrival",
+            )
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -162,7 +179,9 @@ fun FrameViewer(
                         bitmap = it,
                         contentDescription = null,
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = arrival },
                     )
                 }
             }
@@ -174,7 +193,11 @@ fun FrameViewer(
 
         Spacer(Modifier.weight(1f))
 
-        AnimatedVisibility(visible = regrading && current != null) {
+        AnimatedVisibility(
+            visible = regrading && current != null,
+            enter = fadeIn(Motion.enter()) + expandVertically(Motion.resize()),
+            exit = fadeOut(Motion.leave()) + shrinkVertically(Motion.resize()),
+        ) {
             current?.let { record ->
                 RegradePicker(
                     recipes = recipes,
@@ -187,7 +210,11 @@ fun FrameViewer(
             }
         }
 
-        AnimatedVisibility(visible = confirmingDelete && current != null) {
+        AnimatedVisibility(
+            visible = confirmingDelete && current != null,
+            enter = fadeIn(Motion.enter()) + expandVertically(Motion.resize()),
+            exit = fadeOut(Motion.leave()) + shrinkVertically(Motion.resize()),
+        ) {
             current?.let { record ->
                 // The original only goes with it when no other render still points at
                 // it — a re-grade and the shot it came from share one source file.
@@ -250,9 +277,9 @@ private fun FrameFacts(record: CaptureRecord, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
+        LatentText(
             text = record.recipeName.uppercase(),
-            style = MaterialTheme.typography.labelMedium,
+            style = LatentType.LabelMedium,
             color = LatentInk.Full,
         )
         Spacer(Modifier.weight(1f))
@@ -269,9 +296,9 @@ private fun screenWidth(): androidx.compose.ui.unit.Dp =
 
 @Composable
 private fun Fact(label: String, tint: Color = LatentInk.Medium) {
-    Text(
+    LatentText(
         text = label,
-        style = MaterialTheme.typography.labelSmall,
+        style = LatentType.LabelSmall,
         color = tint,
         modifier = Modifier
             .clip(RoundedCornerShape(3.dp))
@@ -293,9 +320,9 @@ private fun RegradePicker(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(
+        LatentText(
             text = "RENDER AGAIN AS",
-            style = MaterialTheme.typography.labelSmall,
+            style = LatentType.LabelSmall,
             color = LatentInk.Soft,
             modifier = Modifier.padding(start = 20.dp, bottom = 6.dp),
         )
@@ -308,21 +335,17 @@ private fun RegradePicker(
                 val isCurrent = recipe.name == currentName
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
+                        .tactile { onPick(recipe) }
+                        .clip(RoundedCornerShape(6.dp))
                         .background(LatentInk.Wash)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { onPick(recipe) },
-                        )
                         .padding(horizontal = 12.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     if (isCurrent) CheckIcon(size = 12.dp, tint = LatentInk.Soft)
-                    Text(
+                    LatentText(
                         text = recipe.name.uppercase(),
-                        style = MaterialTheme.typography.labelMedium,
+                        style = LatentType.LabelMedium,
                         color = if (isCurrent) LatentInk.Soft else LatentInk.Full,
                     )
                 }
@@ -345,7 +368,7 @@ private fun DeleteConfirm(
             .padding(horizontal = 20.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
+        LatentText(
             // Saying what goes with it, because the original is the thing that cannot
             // be recovered and the graded frame is the thing you are looking at.
             text = if (hasOriginal) {
@@ -353,7 +376,7 @@ private fun DeleteConfirm(
             } else {
                 "DELETE THIS FRAME?"
             },
-            style = MaterialTheme.typography.labelSmall,
+            style = LatentType.LabelSmall,
             color = LatentInk.Warn,
         )
         Spacer(Modifier.height(8.dp))
@@ -365,20 +388,26 @@ private fun DeleteConfirm(
     }
 }
 
+/**
+ * Both sides of an irreversible choice, weighted the same.
+ *
+ * Deletion here takes the colour original with it, so the destructive option is not
+ * made easier to hit than the way out — only redder.
+ */
 @Composable
 private fun ConfirmChip(label: String, tint: Color, onClick: () -> Unit) {
-    Text(
+    val haptics = LocalHapticFeedback.current
+    LatentText(
         text = label,
-        style = MaterialTheme.typography.labelMedium,
+        style = LatentType.LabelMedium,
         color = tint,
         modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
+            .tactile {
+                Feedback.confirm(haptics)
+                onClick()
+            }
+            .clip(RoundedCornerShape(6.dp))
             .background(LatentInk.Wash)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            )
             .padding(horizontal = 18.dp, vertical = 9.dp),
     )
 }
