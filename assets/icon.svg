@@ -1,0 +1,26 @@
+<!-- Port of app/src/main/res/drawable/ic_launcher_foreground.xml for places that
+  cannot render Android vectors (README, store listing). Geometry is identical:
+  5x5 dot grid on the 108 canvas, dots ramped along the diagonal, solid lens at
+  the centre, white on black. If the launcher mark changes, regenerate this. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <rect width="108" height="108" fill="#000000"/>
+  <g fill="#FFFFFF">
+    <circle cx="34" cy="34" r="1.7"/>
+    <circle cx="44" cy="34" r="1.99"/>
+    <circle cx="54" cy="34" r="2.27"/>
+    <circle cx="64" cy="34" r="2.56"/>
+    <circle cx="74" cy="34" r="2.85"/>
+    <circle cx="34" cy="44" r="1.99"/>
+    <circle cx="74" cy="44" r="3.14"/>
+    <circle cx="34" cy="54" r="2.27"/>
+    <circle cx="74" cy="54" r="3.42"/>
+    <circle cx="34" cy="64" r="2.56"/>
+    <circle cx="74" cy="64" r="3.71"/>
+    <circle cx="34" cy="74" r="2.85"/>
+    <circle cx="44" cy="74" r="3.14"/>
+    <circle cx="54" cy="74" r="3.42"/>
+    <circle cx="64" cy="74" r="3.71"/>
+    <circle cx="74" cy="74" r="4"/>
+    <circle cx="54" cy="54" r="6.4"/>
+  </g>
+</svg>

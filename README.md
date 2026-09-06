@@ -1,5 +1,9 @@
 # Latent
 
+<p align="center">
+  <img src="assets/icon.svg" width="128" alt="Latent icon — a square dot-matrix frame with a lens at its centre">
+</p>
+
 A 1:1 black-and-white camera app for Android. One photographic style, made fast:
 square frames, monochrome, texture-forward, with real tonal control.
 
@@ -35,8 +39,8 @@ real time, so the look is chosen *before* the shutter, not rescued after.
   paired in Room. Re-grade any capture from the original under a different recipe,
   anytime.
 - **Full manual control** on capable hardware (degrades gracefully elsewhere): ISO,
-  shutter speed, manual focus, EV, physical lens picker, pinch zoom, tap-to-focus with
-  long-press lock.
+  shutter speed, manual focus, white-balance presets with AWB lock, EV, physical
+  lens picker, pinch zoom, tap-to-focus with long-press lock.
 - **Shooting aids, preview-only** — peaking, zebra, live histogram, level, and grid
   overlays that never touch the saved file.
 - **Save modes:** processed B&W only, B&W + untouched original (default), or add a DNG.
