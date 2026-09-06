@@ -39,12 +39,21 @@ data class CameraCapabilities(
      * nothing is worse than one that is not there.
      */
     val supportsRawJpeg: Boolean,
+    /**
+     * AWB modes the device reports, restricted to the presets the dial knows how to
+     * name. Empty where the camera exposes no white-balance control at all.
+     */
+    val awbModes: List<Int> = emptyList(),
+    /** Whether `CONTROL_AWB_LOCK` is honoured on this camera. */
+    val supportsAwbLock: Boolean = false,
 ) {
 
     val supportsManualIso: Boolean get() = supportsManualSensor && isoRange != null
     val supportsManualShutter: Boolean get() = supportsManualSensor && exposureTimeRangeNs != null
     val supportsManualFocus: Boolean get() = minFocusDistanceDioptres > 0f
     val supportsEv: Boolean get() = evRange.first != 0 || evRange.last != 0
+    /** A WB dial stop the device can actually hold. */
+    val supportsManualWb: Boolean get() = awbModes.isNotEmpty()
 
     /** True where the device claims no more than the baseline Camera2 guarantees. */
     val isLegacy: Boolean
@@ -128,6 +137,10 @@ data class CameraCapabilities(
                     .getCameraCharacteristic(CameraCharacteristics.LENS_INFO_AVAILABLE_APERTURES)
                     ?.firstOrNull(),
                 supportsRawJpeg = supportsRawJpeg(cameraInfo),
+                awbModes = availableWbPresets(camera2),
+                supportsAwbLock = camera2
+                    .getCameraCharacteristic(CameraCharacteristics.CONTROL_AWB_LOCK_AVAILABLE)
+                    ?: true,
             )
         }
 
@@ -142,6 +155,19 @@ data class CameraCapabilities(
                 .supportedOutputFormats
                 .contains(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
         }.getOrDefault(false)
+
+        /**
+         * The dial's presets intersected with what the device reports. A stop the
+         * camera did not list is a stop that silently does nothing, so it is dropped
+         * here rather than shown and inert. Order follows the dial, not the device.
+         */
+        private fun availableWbPresets(camera2: Camera2CameraInfo): List<Int> {
+            val reported = camera2
+                .getCameraCharacteristic(CameraCharacteristics.CONTROL_AWB_AVAILABLE_MODES)
+                ?.toSet()
+                ?: return emptyList()
+            return ManualControls.WbPresets.map { it.first }.filter { it in reported }
+        }
 
         /**
          * Focal length as a 35mm photographer reads it. The sensor's physical size

@@ -67,6 +67,7 @@ internal class LookPipeline(assets: AssetManager, source: TextureSource) {
         presentation: Presentation,
         viewportX: Int = 0,
         viewportY: Int = 0,
+        grainDetail: Float = 1f,
     ) {
         // Normalise: whichever way the source arrives, the intermediate always ends
         // up with texture coordinate t=0 on the top of the image. Every stage that
@@ -86,7 +87,7 @@ internal class LookPipeline(assets: AssetManager, source: TextureSource) {
         } else {
             GLES30.glViewport(0, 0, side, side)
         }
-        look.draw(intermediate.texture, side, recipe, flipY = topDown)
+        look.draw(intermediate.texture, side, recipe, flipY = topDown, grainDetail = grainDetail)
     }
 
     fun release() {

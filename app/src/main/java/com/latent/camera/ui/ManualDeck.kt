@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.latent.camera.camera.CameraState
+import com.latent.camera.camera.ManualControls
 import com.latent.camera.camera.MeteredValues
 import com.latent.camera.ui.theme.Feedback
 import com.latent.camera.ui.theme.LatentChip
@@ -51,7 +52,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.distinctUntilChanged
 
-enum class ManualParam { Iso, Shutter, Focus }
+enum class ManualParam { Iso, Shutter, Focus, Wb }
 
 /**
  * Inline manual deck — replaces the recipe strip while you're riding the camera.
@@ -65,6 +66,8 @@ fun ManualDeck(
     onIso: (Int?) -> Unit,
     onShutter: (Long?) -> Unit,
     onFocus: (Float?) -> Unit,
+    onWbPreset: (Int?) -> Unit,
+    onAwbLock: (Boolean) -> Unit,
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -105,6 +108,14 @@ fun ManualDeck(
                         selected = param == ManualParam.Focus,
                         engaged = state.manual.focusDioptres != null,
                         onClick = { onParamChange(ManualParam.Focus) },
+                    )
+                }
+                if (capabilities.supportsManualWb || capabilities.supportsAwbLock) {
+                    ParamChip(
+                        label = "WB",
+                        selected = param == ManualParam.Wb,
+                        engaged = state.manual.isWbManual,
+                        onClick = { onParamChange(ManualParam.Wb) },
                     )
                 }
             }
@@ -198,9 +209,56 @@ fun ManualDeck(
                     )
                 }
             }
+            ManualParam.Wb -> if (capabilities.supportsManualWb || capabilities.supportsAwbLock) {
+                // AUTO first, then the freeze, then the presets in daylight order.
+                // LOCK is a stop rather than a separate toggle so the dial always
+                // shows which answer is on — auto, frozen, or named.
+                val stops = buildList {
+                    add(null to "AUTO")
+                    if (capabilities.supportsAwbLock) add(WB_LOCK_STOP to "LOCK")
+                    ManualControls.WbPresets
+                        .filter { it.first in capabilities.awbModes }
+                        .forEach { add(it.first to it.second) }
+                }
+                val current = when {
+                    state.manual.wbPreset != null ->
+                        stops.indexOfFirst { it.first == state.manual.wbPreset }
+                            .coerceAtLeast(0)
+                    state.manual.awbLocked ->
+                        stops.indexOfFirst { it.first == WB_LOCK_STOP }
+                            .coerceAtLeast(0)
+                    else -> 0
+                }
+                TickDial(
+                    labels = stops.map { it.second },
+                    selectedIndex = current,
+                    onSelect = { index ->
+                        when (val stop = stops[index].first) {
+                            null -> onWbPreset(null)
+                            WB_LOCK_STOP -> onAwbLock(true)
+                            else -> onWbPreset(stop)
+                        }
+                    },
+                    // Opening the dial must not freeze anything: unlike ISO, where
+                    // showing the dial means taking the parameter, here the choice
+                    // is explicit on every stop including AUTO.
+                    onEngageIfNeeded = {},
+                )
+                if (state.manual.awbLocked) {
+                    LatentText(
+                        text = "WB FROZEN — TAP AUTO TO RELEASE",
+                        style = LatentType.LabelSmall,
+                        color = LatentInk.Lock,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+            }
         }
     }
 }
+
+/** Dial stop for the AWB freeze. No AWB mode is negative, so this can't collide. */
+private const val WB_LOCK_STOP = -1
 
 /**
  * Selected is which dial the deck is showing; engaged is whether that parameter has

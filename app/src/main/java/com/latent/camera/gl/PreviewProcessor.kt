@@ -71,6 +71,12 @@ internal class PreviewProcessor(private val assets: AssetManager) : SurfaceProce
     private var lastHistogramAt = 0L
     private var zebraPhase = 0f
 
+    /**
+     * Sheds the outer grain octaves when the GL thread sustainably misses vsync.
+     * Capture never reads this — files always render full detail.
+     */
+    private val governor = PreviewQualityGovernor()
+
     override fun onInputSurface(request: SurfaceRequest) {
         handler.post {
             if (released) {
@@ -140,6 +146,11 @@ internal class PreviewProcessor(private val assets: AssetManager) : SurfaceProce
 
         zebraPhase = (zebraPhase + 0.03f) % 1f
 
+        // Decided from the last frame's cost, applied to this one: sampling at the
+        // end keeps the measurement of this frame out of its own verdict.
+        val grainDetail = if (governor.reduced) 0f else 1f
+        val frameStartNs = System.nanoTime()
+
         for ((output, eglSurface) in outputs) {
             try {
                 output.updateTransformMatrix(outputMatrix, inputMatrix)
@@ -165,7 +176,7 @@ internal class PreviewProcessor(private val assets: AssetManager) : SurfaceProce
                 GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
 
                 if (currentAids.needsGradedFrame) {
-                    renderWithAids(chain, side, currentAids, viewportX, viewportY)
+                    renderWithAids(chain, side, currentAids, viewportX, viewportY, grainDetail)
                 } else {
                     histogramBins = null
                     chain.render(
@@ -177,6 +188,7 @@ internal class PreviewProcessor(private val assets: AssetManager) : SurfaceProce
                         presentation = Presentation.Screen,
                         viewportX = viewportX,
                         viewportY = viewportY,
+                        grainDetail = grainDetail,
                     )
                 }
 
@@ -186,6 +198,16 @@ internal class PreviewProcessor(private val assets: AssetManager) : SurfaceProce
                 Log.w(TAG, "Dropped a preview frame on one output", e)
             }
         }
+
+        val wasReduced = governor.reduced
+        governor.sample(System.nanoTime() - frameStartNs)
+        if (governor.reduced != wasReduced) {
+            Log.i(
+                TAG,
+                if (governor.reduced) "Preview grain reduced under sustained load"
+                else "Preview grain restored after a healthy run",
+            )
+        }
     }
 
     private fun renderWithAids(
@@ -194,6 +216,7 @@ internal class PreviewProcessor(private val assets: AssetManager) : SurfaceProce
         currentAids: AidsState,
         viewportX: Int,
         viewportY: Int,
+        grainDetail: Float,
     ) {
         val gradedFb = graded ?: return
         val overlay = aidsProgram ?: return
@@ -206,6 +229,7 @@ internal class PreviewProcessor(private val assets: AssetManager) : SurfaceProce
             recipe = recipe,
             targetFramebuffer = gradedFb.framebufferName,
             presentation = Presentation.Screen,
+            grainDetail = grainDetail,
         )
 
         if (currentAids.histogram) {
@@ -296,6 +320,11 @@ internal class PreviewProcessor(private val assets: AssetManager) : SurfaceProce
 
     private companion object {
         const val TAG = "PreviewProcessor"
-        const val HISTOGRAM_INTERVAL_MS = 80L
+        /**
+         * Histogram refresh. 80ms reads back 64x64px on the GL thread every ~5 frames;
+         * 150ms is still fluid for an exposure aid and halves the readback stalls and
+         * the StateFlow recompositions downstream.
+         */
+        const val HISTOGRAM_INTERVAL_MS = 150L
     }
 }

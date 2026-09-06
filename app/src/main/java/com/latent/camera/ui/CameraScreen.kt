@@ -134,12 +134,15 @@ fun CameraScreen(
         if (!manualOpen) return@LaunchedEffect
         val caps = state.capabilities ?: return@LaunchedEffect
         manualParam = when {
+            state.manual.isWbManual &&
+                (caps.supportsManualWb || caps.supportsAwbLock) -> ManualParam.Wb
             state.manual.focusDioptres != null && caps.supportsManualFocus -> ManualParam.Focus
             state.manual.iso != null && caps.supportsManualIso -> ManualParam.Iso
             state.manual.exposureTimeNs != null && caps.supportsManualShutter -> ManualParam.Shutter
             caps.supportsManualIso -> ManualParam.Iso
             caps.supportsManualShutter -> ManualParam.Shutter
             caps.supportsManualFocus -> ManualParam.Focus
+            caps.supportsManualWb || caps.supportsAwbLock -> ManualParam.Wb
             else -> ManualParam.Iso
         }
     }
@@ -261,6 +264,8 @@ fun CameraScreen(
                             onIso = controller::setManualIso,
                             onShutter = controller::setManualShutter,
                             onFocus = controller::setManualFocus,
+                            onWbPreset = controller::setWbPreset,
+                            onAwbLock = controller::setAwbLocked,
                             onClear = {
                                 controller.clearManual()
                                 manualOpen = false

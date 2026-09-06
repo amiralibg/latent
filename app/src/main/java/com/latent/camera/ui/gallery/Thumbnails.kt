@@ -14,6 +14,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
 /**
@@ -48,6 +51,21 @@ object Thumbnails {
             cache.put(key, bitmap)
             bitmap
         }
+
+    /**
+     * Warm the cache for frames the user is about to look at — the pager's neighbours.
+     * Hits return from `load` without decoding, so this costs nothing for frames
+     * already seen and a couple of background decodes otherwise. Results are
+     * discarded: the cache is the delivery mechanism, which is what makes this safe
+     * to cancel mid-swipe — a restarted prefetch just hits the entries the first one
+     * managed to write.
+     */
+    suspend fun prefetch(context: Context, uris: List<Uri>, targetPx: Int) {
+        if (uris.isEmpty()) return
+        coroutineScope {
+            uris.map { uri -> async { load(context, uri, targetPx) } }.awaitAll()
+        }
+    }
 
     private fun decode(context: Context, uri: Uri, targetPx: Int): Bitmap? = try {
         // Q+ hands back a thumbnail MediaStore has usually already generated, which

@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.latent.camera.camera.CameraState
 import com.latent.camera.camera.Lens
+import com.latent.camera.camera.ManualControls
 import com.latent.camera.camera.MeteredValues
 import com.latent.camera.look.Recipe
 import com.latent.camera.settings.SaveMode
@@ -233,6 +234,20 @@ fun MeterOverlay(
                             label = "EV",
                             value = formatEv(state.exposureEv),
                             emphasize = kotlin.math.abs(state.exposureEv) > 0.05f,
+                        )
+                    }
+                    if (state.manual.isWbManual) {
+                        // A frozen or pinned WB changes the grade without changing the
+                        // frame, so it reads out here next to ISO — same ink, same
+                        // weight, no badge. The AF/AE badge keeps its lock colour to
+                        // itself; this one is a held value, not a trap.
+                        MeterHairline()
+                        MeterCell(
+                            label = "WB",
+                            value = state.manual.wbPreset
+                                ?.let(ManualControls::wbLabel)
+                                ?: "LOCK",
+                            emphasize = true,
                         )
                     }
                     if (state.focus?.locked == true) {

@@ -58,6 +58,10 @@ class MainActivity : ComponentActivity() {
         // Framing a shot takes longer than the screen timeout is willing to wait.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+        // Kick the camera provider while Compose inflates: bind() awaits the same
+        // future, so the service handshake overlaps first-frame work for free.
+        cameraController.warmUp()
+
         val startOnContactSheet = intent?.action == ACTION_CONTACT_SHEET
 
         setContent {

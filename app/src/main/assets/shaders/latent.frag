@@ -44,6 +44,13 @@ uniform float halationRadius;
 uniform float grain;
 uniform float grainSize;
 
+// Preview-only load control, not part of the look. 1.0 is the full three-octave
+// field the file is rendered with; 0.0 is the central octave alone, engaged by the
+// preview governor under sustained thermal pressure. Same source, same uniforms on
+// both paths — the capture path always renders 1.0, so the golden test compares
+// full against full and this can never be a quiet WYSIWYG break.
+uniform float grainDetail;
+
 uniform float toning;
 
 uniform float vignette;
@@ -143,10 +150,18 @@ const mat2 GRAIN_TURN = mat2(0.8018, -0.5976, 0.5976, 0.8018);
 // crystal edge, which keeps the texture from turning soft when the same recipe is
 // rendered at export size.
 float grainField(vec2 p) {
-    float n = valueNoise(GRAIN_TURN * p * 0.47 + 11.3) * 0.28;
-    n += valueNoise(p) * 0.50;
-    n += valueNoise(GRAIN_TURN * p * 2.13 + 5.7) * 0.22;
-    return n;
+    float mid = valueNoise(p);
+    if (grainDetail >= 0.5) {
+        float n = valueNoise(GRAIN_TURN * p * 0.47 + 11.3) * 0.28;
+        n += mid * 0.50;
+        n += valueNoise(GRAIN_TURN * p * 2.13 + 5.7) * 0.22;
+        return n;
+    }
+    // The reduced field: the central octave on its own. One octave has ~1.6x the
+    // spread of the three-octave stack, so the deviation is scaled back by the
+    // inverse to keep `grain` meaning the same depth of modulation — engaging this
+    // reads as slightly simpler grain, not as the grain vanishing or doubling.
+    return 0.5 + (mid - 0.5) * 0.61;
 }
 
 // How hard the particles are. Higher is more bimodal — more grain, less haze.

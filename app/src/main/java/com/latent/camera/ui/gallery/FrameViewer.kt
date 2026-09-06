@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
@@ -150,6 +151,17 @@ fun FrameViewer(
         // Decoded to the width it is drawn at, not to the file's own resolution: a
         // 3060px square costs 37MB as a bitmap and the pager holds three of them.
         val viewerPx = with(density) { screenWidth().roundToPx() }
+        val context = LocalContext.current
+
+        // The swipe lands on a warm cache instead of a grey box: neighbours decode
+        // in the background while the current frame is being looked at. Keyed on the
+        // list as well as the page, so a re-grade or delete re-resolves the stems.
+        LaunchedEffect(pagerState.currentPage, captures, viewerPx) {
+            val neighbours = listOf(pagerState.currentPage - 1, pagerState.currentPage + 1)
+                .mapNotNull { captures.getOrNull(it)?.outputUri }
+                .map(Uri::parse)
+            Thumbnails.prefetch(context, neighbours, viewerPx)
+        }
 
         HorizontalPager(
             state = pagerState,

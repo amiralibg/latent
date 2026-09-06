@@ -148,12 +148,27 @@ class CameraController(context: Context) {
             }
         }
         previewProcessor.onHistogram = { bins ->
-            _state.update { it.copy(histogramBins = bins) }
+            val last = _state.value.histogramBins
+            // Bins arrive ~7x/sec; skip the StateFlow emit when nothing visible changed
+            // so the whole viewfinder doesn't recompose on noise.
+            if (last == null || !last.contentEquals(bins)) {
+                _state.update { it.copy(histogramBins = bins) }
+            }
         }
     }
 
     /** The active look. Preview and the next capture always read this one value. */
     val recipe: Recipe get() = _state.value.recipe
+
+    /**
+     * Start resolving the camera provider before the viewfinder asks for it.
+     * `bind()` awaits the same future, so this only moves the wait earlier — over
+     * Compose inflation and the permission gate — instead of stacking it after.
+     * Idempotent; the provider caches the instance itself.
+     */
+    fun warmUp() {
+        runCatching { ProcessCameraProvider.getInstance(appContext) }
+    }
 
     fun setRecipe(recipe: Recipe) {
         previewProcessor.recipe = recipe
@@ -305,7 +320,7 @@ class CameraController(context: Context) {
         val rawOutput = wantsRawOutput(_state.value.saveMode)
 
         val capture = ImageCapture.Builder()
-            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+            .setCaptureMode(captureModeFor(_state.value.timerSeconds))
             .setResolutionSelector(
                 ResolutionSelector.Builder()
                     .setAspectRatioStrategy(fullSensorFrame)
@@ -546,6 +561,21 @@ class CameraController(context: Context) {
 
     fun setManualFocus(dioptres: Float?) = updateManual { it.copy(focusDioptres = dioptres) }
 
+    /**
+     * Pin white balance to a preset. Null is auto. Choosing either way releases an
+     * AWB freeze — a preset and a lock are different answers to the same question.
+     */
+    fun setWbPreset(preset: Int?) =
+        updateManual { it.copy(wbPreset = preset, awbLocked = false) }
+
+    /**
+     * Freeze auto white balance where it is, or release it back to auto. Locking
+     * clears any preset; unlocking leaves the preset cleared, so both directions
+     * land somewhere explicit rather than on a stale combination.
+     */
+    fun setAwbLocked(locked: Boolean) =
+        updateManual { it.copy(awbLocked = locked, wbPreset = null) }
+
     /** Everything back to auto, in one move. */
     fun clearManual() = updateManual { ManualControls() }
 
@@ -568,7 +598,13 @@ class CameraController(context: Context) {
 
     // ------------------------------------------------------------------ shutter
 
-    fun setTimerSeconds(seconds: Int) = _state.update { it.copy(timerSeconds = seconds) }
+    fun setTimerSeconds(seconds: Int) {
+        val before = _state.value.timerSeconds
+        _state.update { it.copy(timerSeconds = seconds) }
+        // Latency mode is fixed at bind time, so only a crossing matters: enabling
+        // or disabling the timer rebinds once, cycling 3s↔10s does not.
+        if ((before <= 0) != (seconds <= 0)) controlScope.launch { rebind() }
+    }
 
     fun setSilentShutter(silent: Boolean) = _state.update { it.copy(silentShutter = silent) }
 
@@ -886,6 +922,22 @@ private fun ImageProxy.toJpegBytes(): ByteArray {
     val buffer = planes[0].buffer
     return ByteArray(buffer.remaining()).also(buffer::get)
 }
+
+/**
+ * Which capture mode a timer value earns.
+ *
+ * Handheld shooting pays for latency and would never see the quality difference;
+ * a self-timer shot is posed, often propped up, and waits seconds anyway, so it
+ * should spend its budget on quality instead. Deliberately timer-only: manual slow
+ * shutters would need a rebind every time the dial crossed the threshold, which
+ * trades viewfinder blackouts for an improvement nobody asked the dial for.
+ */
+internal fun captureModeFor(timerSeconds: Int): Int =
+    if (timerSeconds > 0) {
+        ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY
+    } else {
+        ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY
+    }
 
 private suspend fun <T> ListenableFuture<T>.await(executor: Executor): T =
     suspendCancellableCoroutine { cont ->

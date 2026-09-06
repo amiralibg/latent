@@ -30,6 +30,11 @@ internal class OffscreenRenderer(private val assets: AssetManager) {
     private var pbuffer: EGLSurface? = null
     private var output = FrameBuffer()
     private var maxTextureSize = 0
+    /**
+     * Readback scratch, reused across shots. A 3000px square needs ~36MB; allocating
+     * that per shutter press spikes GC on the processing thread and can OOM a burst.
+     */
+    private var readback: ByteBuffer? = null
 
     /** Largest square this device's GL driver can render. Forces EGL setup. */
     fun maxOutputSide(): Int {
@@ -44,16 +49,32 @@ internal class OffscreenRenderer(private val assets: AssetManager) {
      * it is baked into the pixels, so the caller should write EXIF orientation as
      * normal rather than passing the rotation on.
      *
+     * [targetSide] overrides the output size. The capture path passes the true square
+     * side of the original frame capped to the GL limit, so a power-of-two decode
+     * subsample doesn't halve the export: the blit pass upscales the working bitmap
+     * to the limit with linear filtering instead of leaving the hole. Omit it and the
+     * output matches the working bitmap, which is what the golden test compares.
+     *
      * The returned bitmap is caller-owned. [source] is not recycled.
      */
-    fun render(source: Bitmap, rotationDegrees: Int, recipe: Recipe): Bitmap {
+    fun render(
+        source: Bitmap,
+        rotationDegrees: Int,
+        recipe: Recipe,
+        targetSide: Int? = null,
+    ): Bitmap {
         ensureInitialised()
         val chain = requireNotNull(pipeline)
         // Re-assert the context: a thread can host more than one, and the golden
         // test drives both render paths from a single thread.
         requireNotNull(eglCore).makeCurrent(requireNotNull(pbuffer))
 
-        val side = SquareCrop.side(source.width, source.height).coerceAtMost(maxTextureSize)
+        val decodedSide = SquareCrop.side(source.width, source.height)
+        if (decodedSide <= 0) throw GlException("Source frame is empty")
+        // Never exceed what the driver can texture; never exceed what was asked for
+        // when the caller knows the true frame size. Upscaling past the working
+        // bitmap is intended — the blit pass filters it.
+        val side = (targetSide ?: decodedSide).coerceAtMost(maxTextureSize)
         if (side <= 0) throw GlException("Source frame is empty")
 
         val texture = Gl.createTexture(GLES30.GL_TEXTURE_2D)
@@ -100,13 +121,20 @@ internal class OffscreenRenderer(private val assets: AssetManager) {
      * the buffer can be copied straight in.
      */
     private fun readInto(target: Bitmap, side: Int) {
-        val pixels = ByteBuffer
-            .allocateDirect(side * side * 4)
-            .order(ByteOrder.nativeOrder())
-        GLES30.glReadPixels(0, 0, side, side, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, pixels)
+        val needed = side * side * 4
+        var buffer = readback
+        if (buffer == null || buffer.capacity() < needed) {
+            buffer = ByteBuffer
+                .allocateDirect(needed)
+                .order(ByteOrder.nativeOrder())
+            readback = buffer
+        }
+        buffer.clear()
+        buffer.limit(needed)
+        GLES30.glReadPixels(0, 0, side, side, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buffer)
         Gl.checkError("glReadPixels")
-        pixels.rewind()
-        target.copyPixelsFromBuffer(pixels)
+        buffer.rewind()
+        target.copyPixelsFromBuffer(buffer)
     }
 
     private fun ensureInitialised() {
@@ -131,6 +159,7 @@ internal class OffscreenRenderer(private val assets: AssetManager) {
 
     fun release() {
         output.release()
+        readback = null
         pipeline?.release()
         pipeline = null
         val core = eglCore ?: return

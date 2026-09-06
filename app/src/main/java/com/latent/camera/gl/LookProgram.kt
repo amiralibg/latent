@@ -38,6 +38,7 @@ internal class LookProgram(assets: AssetManager) {
     private val uHalationRadius = Gl.uniformLocation(program, "halationRadius")
     private val uGrain = Gl.uniformLocation(program, "grain")
     private val uGrainSize = Gl.uniformLocation(program, "grainSize")
+    private val uGrainDetail = Gl.uniformLocation(program, "grainDetail")
     private val uToning = Gl.uniformLocation(program, "toning")
     private val uVignette = Gl.uniformLocation(program, "vignette")
 
@@ -45,8 +46,12 @@ internal class LookProgram(assets: AssetManager) {
      * [frameSize] is the side of the frame being graded. Blur radii are fractions of
      * the frame, so without it the preview and a full-size render would disagree on
      * how much clarity and halation to apply.
+     *
+     * [grainDetail] is preview load control, not look: 1.0 renders the full field,
+     * 0.0 the reduced one. It defaults to full, which is what the capture path and
+     * the golden test always use.
      */
-    fun draw(textureId: Int, frameSize: Int, recipe: Recipe, flipY: Boolean) {
+    fun draw(textureId: Int, frameSize: Int, recipe: Recipe, flipY: Boolean, grainDetail: Float = 1f) {
         GLES30.glUseProgram(program)
 
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
@@ -72,6 +77,7 @@ internal class LookProgram(assets: AssetManager) {
         GLES30.glUniform1f(uHalationRadius, recipe.halationRadius)
         GLES30.glUniform1f(uGrain, recipe.grain)
         GLES30.glUniform1f(uGrainSize, recipe.grainSize)
+        GLES30.glUniform1f(uGrainDetail, grainDetail)
         GLES30.glUniform1f(uToning, recipe.toning)
         GLES30.glUniform1f(uVignette, recipe.vignette)
 

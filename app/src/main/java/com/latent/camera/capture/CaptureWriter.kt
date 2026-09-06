@@ -142,17 +142,27 @@ internal class CaptureWriter(
     ): Uri? {
         val trace = Trace()
         val rotation = CaptureExif.rotationDegrees(jpeg)
+        val limit = renderer.maxOutputSide()
 
-        val source = decode(jpeg) ?: run {
+        // True dimensions of the captured frame, before any working-decode
+        // subsample. The export aims for the square side of this capped to the GL
+        // limit; the decode below only ensures the upload itself fits.
+        val originalBounds = frameBounds(jpeg) ?: run {
+            Log.e(TAG, "Could not read the captured frame bounds")
+            return null
+        }
+        val targetSide = minOf(originalBounds.first, originalBounds.second, limit)
+
+        val source = decode(jpeg, limit) ?: run {
             Log.e(TAG, "Could not decode the captured frame")
             return null
         }
-        val sourceWidth = source.width
-        val sourceHeight = source.height
+        val decodedWidth = source.width
+        val decodedHeight = source.height
         trace.mark("decode")
 
         val graded = try {
-            renderer.render(source, rotation, recipe)
+            renderer.render(source, rotation, recipe, targetSide)
         } finally {
             source.recycle()
         }
@@ -191,13 +201,13 @@ internal class CaptureWriter(
                 recipeName = recipe.name,
                 capturedAt = capturedAt,
                 rotationDegrees = rotation,
-                sourceWidth = sourceWidth,
-                sourceHeight = sourceHeight,
+                sourceWidth = originalBounds.first,
+                sourceHeight = originalBounds.second,
                 regradedFrom = regradedFrom,
             ),
         )
         trace.mark("record")
-        trace.report("${sourceWidth}x$sourceHeight -> ${side}x$side")
+        trace.report("${decodedWidth}x$decodedHeight -> ${side}x$side (frame ${originalBounds.first}x${originalBounds.second})")
         return outputUri
     }
 
@@ -230,16 +240,26 @@ internal class CaptureWriter(
     }
 
     /**
-     * Decode at full resolution, subsampling only when the frame is wider than the
+     * Full-frame dimensions without decoding a pixel. Rotation only swaps which side
+     * is width, so callers that need the square use the min of the two.
+     */
+    private fun frameBounds(jpeg: ByteArray): Pair<Int, Int>? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        return bounds.outWidth to bounds.outHeight
+    }
+
+    /**
+     * Decode a working copy, subsampling only when the frame is wider than the
      * driver will texture. Nothing here touches the saved original — this bitmap is
      * a working copy, and the file on disk keeps every pixel the sensor gave up.
      */
-    private fun decode(jpeg: ByteArray): Bitmap? {
+    private fun decode(jpeg: ByteArray, limit: Int): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
-        val limit = renderer.maxOutputSide()
         var sampleSize = 1
         while (
             bounds.outWidth / sampleSize > limit || bounds.outHeight / sampleSize > limit
